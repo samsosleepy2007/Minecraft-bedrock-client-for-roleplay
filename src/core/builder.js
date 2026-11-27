@@ -7,6 +7,16 @@ import { reduceGeometryDef, makeGeometryFile, countCubes } from './geometry.js';
 import { decodePng, encodePng, downscale, tint, DEBUG_COLORS } from './texture.js';
 import { normalizeSettings, settingsFor, thresholds, textureLevels } from './settings.js';
 import { LICENSE_TEXT } from './license.js';
+import packIconUrl from '../assets/pack_icon.png?inline';
+
+/** SleepyShop logo bytes for pack_icon.png */
+export function packIconBytes() {
+  const b64 = packIconUrl.slice(packIconUrl.indexOf(',') + 1);
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 
 export const PACK_NAME = 'SleepyArmor Lite';
 const PLAYER = "q.owner_identifier == 'minecraft:player'";
@@ -98,6 +108,7 @@ export async function buildPack(armors, options) {
   };
   zip.file('manifest.json', toJson(makeManifest(global, packState, armors.length)));
   zip.file('LICENSE.txt', LICENSE_TEXT);
+  zip.file('pack_icon.png', packIconBytes());
   prog(0.98, 'zip');
   const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
   prog(1, 'done');
@@ -107,19 +118,26 @@ export async function buildPack(armors, options) {
 
 export function makeManifest(s, packState, count) {
   const t = thresholds(s, false).join('/');
-  const hide = s.hide.enabled ? ` | hide ${s.hide.distance}` : '';
+  const hide = s.hide.enabled ? `§7, hide §f${s.hide.distance}` : '';
   const v = [1, 0, packState.version];
+  const description = [
+    `§l§bSleepy§dArmor §fLite§r §7by §6Sleepy§eShop §8(SamSoSleepy)`,
+    `§aLOD §f${t} §7blocks${hide} §8| §f${count} §7armor`,
+    `§eFree & open source §7(GPL-3.0) §8- §7keep the SleepyShop credit; modified versions must stay GPL-3.0.`,
+    `§7Armor models/textures belong to their original creators. Personal use; keep the original add-on installed and put this pack §fABOVE§7 it.`,
+    ...(s.debug ? ['§c§lDEBUG§r§c: colours show LOD levels (1 blue, 2 red, 3 green, 4 yellow)'] : []),
+  ].join('\n');
   return {
     format_version: 2,
     header: {
-      name: PACK_NAME + (s.debug ? ' DEBUG' : ''),
-      description: `By SamSoSleepy | LOD ${t} blocks${hide} | ${count} armor(s)`,
+      name: `§l§bSleepy§dArmor §fLite§r §7- §e${count} §fArmor${s.debug ? ' §c[DEBUG]' : ''}`,
+      description,
       uuid: packState.headerUuid,
       version: v,
       min_engine_version: [1, 21, 0],
     },
     modules: [{ type: 'resources', uuid: packState.moduleUuid, version: v }],
-    metadata: { authors: ['SamSoSleepy'] },
+    metadata: { authors: ['SamSoSleepy'], license: 'GPL-3.0-only', url: 'https://github.com/samsosleepy2007/Minecraft-bedrock-client-for-roleplay' },
   };
 }
 

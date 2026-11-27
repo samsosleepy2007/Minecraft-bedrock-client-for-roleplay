@@ -160,7 +160,10 @@ describe('scan + build (fixture)', () => {
     const m = JSON.parse(await z.file('manifest.json').async('string'));
     expect(m.header.min_engine_version).toEqual([1, 21, 0]);
     expect(m.metadata.authors).toEqual(['SamSoSleepy']);
-    expect(m.header.description).toMatch(/By SamSoSleepy/);
+    expect(m.header.description).toMatch(/SleepyShop/);
+    expect(m.header.description).toMatch(/GPL-3\.0/);
+    expect(m.header.name.replace(/§./g, '')).toBe('SleepyArmor Lite - 2 Armor');
+    expect(pngSize(await z.file('pack_icon.png').async('uint8array'))).toEqual({ width: 64, height: 64 });
     expect(m.header.description).toMatch(/8\/16\/32/);
     expect(m.header.uuid).toMatch(/^[0-9a-f-]{36}$/);
     expect(m.header.uuid).not.toBe(m.modules[0].uuid);
@@ -224,7 +227,7 @@ describe('scan + build (fixture)', () => {
     const a = await scanAddon('S.mcaddon', await makeSampleAddon());
     const hair = a.armors.find((x) => x.identifier === 'sleepy:hair_helmet');
     const res = await buildPack(a.armors, { settings: settings({ memoryMode: 'none' }), overrides: { [hair.key]: { lodCount: 1, hide: { enabled: false } } } });
-    expect(res.files.some((f) => f.endsWith('.png'))).toBe(false);
+    expect(res.files.filter((f) => f.endsWith('.png'))).toEqual(['pack_icon.png']);
     const z = await JSZip.loadAsync(res.bytes);
     const att = JSON.parse(await z.file('attachables/sleepy_hair_helmet.json').async('string'))['minecraft:attachable'].description;
     expect(att.textures.lod1).toBe(att.textures.default);
