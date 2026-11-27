@@ -1,0 +1,18 @@
+SleepyArmor Lite
+Copyright (C) 2026 SamSoSleepy (SleepyShop)
+
+[ภาษาไทย]
+โปรแกรมนี้เป็นซอฟต์แวร์เสรี (open source) ใช้งานได้ฟรีทุกคน
+คุณสามารถแจกจ่ายต่อและ/หรือแก้ไขได้ภายใต้เงื่อนไขของ GNU General Public License
+เวอร์ชัน 3 (GPL-3.0) — หากแก้ไขแล้วนำไปแจกจ่าย ต้องเปิดซอร์สโค้ดภายใต้ GPL-3.0 เช่นกัน
+และต้องคงชื่อผู้สร้าง (SamSoSleepy) และประกาศลิขสิทธิ์นี้ไว้
+โปรแกรมนี้ให้มา "ตามสภาพ" โดยไม่มีการรับประกันใด ๆ ดูรายละเอียดในไฟล์ LICENSE
+
+[English]
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License version 3 (GPL-3.0).
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the LICENSE file for details.
+
+Source: https://github.com/samsosleepy2007/Minecraft-bedrock-client-for-roleplay

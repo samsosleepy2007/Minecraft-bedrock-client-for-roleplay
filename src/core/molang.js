@@ -1,5 +1,5 @@
-/*! SleepyArmor Lite — Copyright (c) 2026 SamSoSleepy (SleepyShop). All rights reserved.
- * Proprietary. Unauthorized use: 5,000 THB fine + blacklist until paid. See LICENSE.txt. */
+/*! SleepyArmor Lite — Copyright (C) 2026 SamSoSleepy (SleepyShop)
+ * SPDX-License-Identifier: GPL-3.0-only — free software, see LICENSE. */
 
 /** Init block pattern: "(v.xxx ?? 0) == 0 ? { ... }" */
 const INIT_RE = /^\s*\(\s*(v|variable)\.[\w.]+\s*\?\?\s*0\s*\)\s*==\s*0\s*\?\s*\{/i;

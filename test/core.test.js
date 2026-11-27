@@ -1,5 +1,5 @@
-/*! SleepyArmor Lite — Copyright (c) 2026 SamSoSleepy (SleepyShop). All rights reserved.
- * Proprietary. Unauthorized use: 5,000 THB fine + blacklist until paid. See LICENSE.txt. */
+/*! SleepyArmor Lite — Copyright (C) 2026 SamSoSleepy (SleepyShop)
+ * SPDX-License-Identifier: GPL-3.0-only — free software, see LICENSE. */
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
 import {
@@ -155,7 +155,7 @@ describe('scan + build (fixture)', () => {
     // every JSON file is strictly valid JSON
     for (const n of names.filter((n) => n.endsWith('.json'))) JSON.parse(await z.file(n).async('string'));
     expect(names).toContain('LICENSE.txt');
-    expect(await z.file('LICENSE.txt').async('string')).toMatch(/5,000/);
+    expect(await z.file('LICENSE.txt').async('string')).toMatch(/GNU GENERAL PUBLIC LICENSE/);
 
     const m = JSON.parse(await z.file('manifest.json').async('string'));
     expect(m.header.min_engine_version).toEqual([1, 21, 0]);
