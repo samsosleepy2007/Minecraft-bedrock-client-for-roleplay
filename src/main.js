@@ -1,6 +1,7 @@
 /*! SleepyArmor Lite — Copyright (C) 2026 SamSoSleepy (SleepyShop)
  * SPDX-License-Identifier: GPL-3.0-only — free software, see LICENSE. */
 import './style.css';
+import morphdom from 'morphdom';
 import { STR } from './i18n.js';
 import { PRESETS, RESOLUTIONS, MAX_LODS, normalizeSettings, validateSettings, estimateExtraMB, settingsFor } from './core/settings.js';
 
@@ -147,11 +148,20 @@ function requestPreview(key) {
   state.previews[key] = { ...(p || {}), pending: sig };
   worker.postMessage({ type: 'preview', key, id: sig, settings: state.settings, override: state.overrides[key] });
 }
-function onPreview(m) {
+async function onPreview(m) {
   const old = state.previews[m.key];
   if (old?.pending !== m.id) return;
+  // three.js is loaded only when a preview is first needed (keeps first load small on phones)
+  const { renderModel } = await import('./preview3d.js').catch(() => ({ renderModel: async () => null }));
+  const levels = [];
+  for (const l of m.levels) {
+    // 3D render of the (reduced) model; falls back to the flat texture
+    const url = (await renderModel(l.geo, l.png, { blend: m.blend }).catch(() => null)) || URL.createObjectURL(new Blob([l.png], { type: 'image/png' }));
+    levels.push({ r: l.r, url });
+  }
+  if (state.previews[m.key]?.pending !== m.id) return levels.forEach((l) => URL.revokeObjectURL(l.url));
   old.levels?.forEach((l) => URL.revokeObjectURL(l.url));
-  state.previews[m.key] = { sig: m.id, levels: m.levels.map((l) => ({ r: l.r, url: URL.createObjectURL(new Blob([l.png], { type: 'image/png' })) })) };
+  state.previews[m.key] = { sig: m.id, levels };
   render();
 }
 
@@ -233,6 +243,21 @@ function previewStrip(a) {
     .join('')}</div>`;
 }
 
+/** Patch the DOM instead of replacing it, so CSS transitions/animations keep running. */
+function patch(html) {
+  const next = document.createElement('main');
+  next.id = 'app';
+  next.innerHTML = html;
+  morphdom($('#app'), next, {
+    onBeforeElUpdated(from, to) {
+      if (from.isEqualNode(to)) return false;
+      if (from.type === 'file') return false; // never reset the file picker
+      if (from.dataset?.slider && from === document.activeElement && state.dragging) return false;
+      return true;
+    },
+  });
+}
+
 const PRESET_KEYS = ['saver', 'balanced', 'quality'];
 const PRESET_SLIDERS = { saver: { res: 25, hide: 48 }, balanced: { res: 50, hide: 64 }, quality: { res: 50, hide: 128 } };
 const SLIDERS = [
@@ -262,7 +287,7 @@ function simpleControls(s) {
   return `<div class="simple">
     ${SLIDERS.map((o) => {
       const v = state.sliders[o.k];
-      return `<label class="sl" data-sl="${o.k}"><span class="slh">${t('sl_' + o.k)}<b>${sliderText(o.k, v)}</b></span>
+      return `<label class="sl ${state.dragging === o.k ? 'drag' : ''}" data-sl="${o.k}"><span class="slh">${t('sl_' + o.k)}<b>${sliderText(o.k, v)}</b></span>
         <span class="slt"><span class="rail"></span><span class="fill" style="width:${pct(o, v)}"></span><span class="thumb" style="left:${pct(o, v)}"></span>
         <input type="range" min="${o.min}" max="${o.max}" value="${v}" data-slider="${o.k}" aria-label="${t('sl_' + o.k)}"></span></label>`;
     }).join('')}
@@ -279,7 +304,7 @@ function render() {
   const dupIds = new Set(state.duplicates.map((d) => d.identifier));
   const pi = PRESET_KEYS.indexOf(state.preset);
 
-  $('#app').innerHTML = `
+  patch(`
   <div class="wrap">
   <header>
     <div class="top">
@@ -363,7 +388,7 @@ function render() {
   </details>
 
   <footer>© 2026 SamSoSleepy · SleepyShop · GPL-3.0 · <a href="https://github.com/samsosleepy2007/Minecraft-bedrock-client-for-roleplay" target="_blank" rel="noopener">${t('source')}</a></footer>
-  </div>`;
+  </div>`);
 }
 
 // ---------- events (delegated) ----------
@@ -410,8 +435,18 @@ app.addEventListener('input', (e) => {
   box.querySelector('.thumb').style.left = pct(o, v);
   box.querySelector('b').textContent = sliderText(o.k, v);
 });
-app.addEventListener('pointerdown', (e) => e.target.dataset?.slider && e.target.closest('.sl').classList.add('drag'));
-app.addEventListener('pointerup', (e) => e.target.dataset?.slider && e.target.closest('.sl').classList.remove('drag'));
+const endDrag = () => {
+  if (!state.dragging) return;
+  document.querySelector(`.sl[data-sl="${state.dragging}"]`)?.classList.remove('drag');
+  state.dragging = null;
+};
+app.addEventListener('pointerdown', (e) => {
+  if (!e.target.dataset?.slider) return;
+  state.dragging = e.target.dataset.slider;
+  e.target.closest('.sl').classList.add('drag');
+});
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
 app.addEventListener('toggle', (e) => {
   if (e.target.id === 'expert') state.expertOpen = e.target.open;
   if (e.target.id === 'adv') state.advOpen = e.target.open;

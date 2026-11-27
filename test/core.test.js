@@ -83,6 +83,15 @@ describe('geometry', () => {
     expect(r.bones.find((b) => b.name === 'hair_side').cubes).toHaveLength(2);
     expect(countCubes(r)).toBe(countCubes(def) - 2);
   });
+  it('dedupe matches a slightly wider second layer and keeps the front-most one', () => {
+    const d = { bones: [{ name: 'h', cubes: [
+      { origin: [-6, 23.25, 4.2], size: [12, 0.75, 0], uv: { south: { uv: [18, 46], uv_size: [12, 0.75] } } },
+      { origin: [-6.6, 23.25, 3.8], size: [13, 0.75, 0], uv: { south: { uv: [51, 41], uv_size: [13, 0.75] } } },
+    ] }] };
+    const r = reduceGeometryDef(d, { dedupePlanes: true });
+    expect(r.bones[0].cubes).toHaveLength(1);
+    expect(r.bones[0].cubes[0].size[0]).toBe(13); // z 3.8 is in front of z 4.2
+  });
   it('min cube size removes tiny cubes; uv untouched', () => {
     const r = reduceGeometryDef(def, { minCubeSize: 1, dedupePlanes: true });
     expect(countCubes(def)).toBe(7);

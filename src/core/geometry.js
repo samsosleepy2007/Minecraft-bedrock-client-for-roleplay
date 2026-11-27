@@ -31,15 +31,22 @@ export function countCubes(def) {
 const planeAxis = (size) => (Array.isArray(size) ? size.findIndex((s) => Number(s) === 0) : -1);
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
+/**
+ * Two planes count as stacked layers when they face the same axis, share rotation/pivot,
+ * lie within 1px along the normal and roughly overlap in-plane (size ±2px, origin ±1.5px).
+ * Matches e.g. 2-layer hair where the outer layer is slightly wider.
+ */
 function isDuplicatePlane(a, b) {
   const ax = planeAxis(a.size);
   if (ax < 0 || ax !== planeAxis(b.size)) return false;
-  if (!same(a.size, b.size) || !same(a.rotation, b.rotation) || !same(a.pivot, b.pivot)) return false;
+  if (!same(a.rotation, b.rotation) || !same(a.pivot, b.pivot)) return false;
   const oa = a.origin || [0, 0, 0];
   const ob = b.origin || [0, 0, 0];
   for (let i = 0; i < 3; i++) {
     const d = Math.abs(Number(oa[i]) - Number(ob[i]));
-    if (i === ax ? d > 1.0001 : d > 0.0001) return false;
+    if (i === ax) {
+      if (d > 1.0001) return false;
+    } else if (d > 1.5001 || Math.abs(Number(a.size[i]) - Number(b.size[i])) > 2.0001) return false;
   }
   return true;
 }
@@ -63,7 +70,13 @@ export function reduceGeometryDef(def, opt = {}) {
     }
     if (opt.dedupePlanes) {
       const kept = [];
-      for (const c of cubes) if (!kept.some((k) => isDuplicatePlane(k, c))) kept.push(c);
+      // Stacked layers are often front/back colours of the same hair strip. Keep the layer that is
+      // seen from the front (smallest z for planes facing ±z; models face north = -z), else the first.
+      for (const c of cubes) {
+        const i = kept.findIndex((k) => isDuplicatePlane(k, c));
+        if (i < 0) kept.push(c);
+        else if (planeAxis(c.size) === 2 && Number(c.origin?.[2]) < Number(kept[i].origin?.[2])) kept[i] = c;
+      }
       cubes = kept;
     }
     bone.cubes = cubes;

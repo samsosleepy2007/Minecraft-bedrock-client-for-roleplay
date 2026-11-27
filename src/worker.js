@@ -1,7 +1,7 @@
 /*! SleepyArmor Lite — Copyright (C) 2026 SamSoSleepy (SleepyShop)
  * SPDX-License-Identifier: GPL-3.0-only — free software, see LICENSE. */
 // All processing happens here, inside the user's browser. Nothing is uploaded.
-import { scanAddon, summarize, findDuplicates, buildPack, decodePng, encodePng, downscale, tint, DEBUG_COLORS, settingsFor, normalizeSettings } from './core/index.js';
+import { scanAddon, summarize, findDuplicates, buildPack, decodePng, encodePng, downscale, tint, DEBUG_COLORS, settingsFor, normalizeSettings, reduceGeometryDef } from './core/index.js';
 
 const decoded = new Map();
 
@@ -42,14 +42,16 @@ self.onmessage = async ({ data: msg }) => {
           decoded.set(a.key, img);
         }
         const alphaMode = /blend|translucent/i.test(a.material) ? 'blend' : 'test';
+        let def = a.geometry?.def || null;
         for (let i = 0; i <= s.lodCount; i++) {
+          if (def && i > 0 && (s.levels[i].minCubeSize > 0 || s.levels[i].dedupePlanes)) def = reduceGeometryDef(def, s.levels[i]);
           const r = i === 0 || s.memoryMode === 'none' || (s.memoryMode === 'minimal' && i < s.lodCount) ? 1 : s.levels[i].resolution;
           let im = r === 1 ? img : downscale(img, r, { alphaMode });
           if (s.debug && i > 0) im = tint(im, DEBUG_COLORS[i]);
-          out.push({ r, png: encodePng(im) });
+          out.push({ r, png: encodePng(im), geo: def });
         }
       }
-      self.postMessage({ type: 'preview', key: msg.key, id: msg.id, levels: out });
+      self.postMessage({ type: 'preview', key: msg.key, id: msg.id, levels: out, blend: /blend|translucent/i.test(a?.material || '') });
     } else if (msg.type === 'build') {
       const sel = msg.keys.map((k) => armors.get(k)).filter(Boolean);
       const res = await buildPack(sel, {

@@ -61,12 +61,25 @@ export async function scanAddon(fileName, data) {
       warnings.push(`manifest: ${path}: ${e.message}`);
     }
   }
+  // Behavior-pack items that are wearable in an armor slot → definitely armor
+  const wearable = new Set();
+  for (const [path, f] of files) {
+    if (!/(^|\/)items\/.*\.json$/i.test(path)) continue;
+    try {
+      const it = parseBedrockJson(await f.async('string'))['minecraft:item'];
+      const slot = it?.components?.['minecraft:wearable']?.slot || '';
+      if (it?.description?.identifier && /armor/.test(slot)) wearable.add(it.description.identifier);
+    } catch {
+      /* ignore */
+    }
+  }
   const armors = [];
   for (const { root, manifest } of roots) {
     const pack = await indexPack(files, root, warnings);
     for (const [rel, att] of pack.attachables) {
       const a = describeArmor(att, rel, pack, warnings);
       if (!a) continue;
+      if (wearable.has(a.identifier)) a.likelyArmor = true;
       a.addonName = fileName;
       a.slug = slug;
       a.packName = manifest?.header?.name || '';
@@ -131,7 +144,8 @@ function describeArmor(att, rel, pack, warnings) {
   if (!geo) w.push(`geometry ${geoId || '?'} not in pack`);
   if (!tex) w.push(`texture ${texRef || '?'} not in pack`);
   else if (tex.ext.toLowerCase() !== '.png') w.push(`texture ${tex.path} is not PNG (kept original)`);
-  const likelyArmor = ARMOR_HINT.test(material) || rcs.some((r) => /armor/i.test(r)) || ARMOR_HINT.test(d.identifier) || ARMOR_HINT.test(rel);
+  const itemLike = rcs.some((r) => /item/i.test(r));
+  const likelyArmor = (!itemLike && geo && (geo.def.bones || []).length >= 3) || ARMOR_HINT.test(material) || rcs.some((r) => /armor/i.test(r)) || ARMOR_HINT.test(d.identifier) || ARMOR_HINT.test(rel);
   return {
     identifier: d.identifier,
     attachablePath: rel,
