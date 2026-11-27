@@ -41,6 +41,8 @@ const state = {
   open: {}, // armor key → preview open
   previews: {}, // armor key → { sig, levels:[{r,url}] }
   advOpen: false,
+  expertOpen: false,
+  sliders: store.get('sliders', { res: 50, hide: 64 }),
   howOpen: false,
 };
 const t = (k) => STR[state.lang][k] ?? k;
@@ -129,6 +131,7 @@ async function share() {
 }
 
 function save() {
+  store.set('sliders', state.sliders);
   store.set('preset', state.preset);
   store.set('settings', state.settings);
   store.set('overrides', state.overrides);
@@ -231,6 +234,42 @@ function previewStrip(a) {
 }
 
 const PRESET_KEYS = ['saver', 'balanced', 'quality'];
+const PRESET_SLIDERS = { saver: { res: 25, hide: 48 }, balanced: { res: 50, hide: 64 }, quality: { res: 50, hide: 128 } };
+const SLIDERS = [
+  { k: 'res', min: 10, max: 100 },
+  { k: 'hide', min: 8, max: 128 },
+];
+const resFromSlider = (v) => (v >= 75 ? 1 : v >= 38 ? 0.5 : v >= 19 ? 0.25 : 0.125);
+function sliderText(k, v) {
+  if (k === 'res') return resFromSlider(v) * 100 + '%';
+  if (v >= 128) return t('noHide');
+  const last = state.settings.levels[state.settings.lodCount - 1].distance;
+  return Math.max(v, last + 1) + ' ' + t('blocks');
+}
+/** Apply a simple slider to the global settings. */
+function applySlider(k, v) {
+  const s = structuredClone(state.settings);
+  if (k === 'res') {
+    const first = resFromSlider(v);
+    for (let i = 1; i < s.levels.length; i++) s.levels[i].resolution = Math.max(0.125, first / 2 ** (i - 1));
+  } else if (v >= 128) s.hide.enabled = false;
+  else s.hide = { enabled: true, distance: Math.max(v, s.levels[s.lodCount - 1].distance + 1) };
+  state.settings = normalizeSettings(s);
+}
+const pct = (o, v) => ((v - o.min) / (o.max - o.min)) * 100 + '%';
+function simpleControls(s) {
+  const physOn = s.physicsOffFrom <= s.lodCount;
+  return `<div class="simple">
+    ${SLIDERS.map((o) => {
+      const v = state.sliders[o.k];
+      return `<label class="sl" data-sl="${o.k}"><span class="slh">${t('sl_' + o.k)}<b>${sliderText(o.k, v)}</b></span>
+        <span class="slt"><span class="rail"></span><span class="fill" style="width:${pct(o, v)}"></span><span class="thumb" style="left:${pct(o, v)}"></span>
+        <input type="range" min="${o.min}" max="${o.max}" value="${v}" data-slider="${o.k}" aria-label="${t('sl_' + o.k)}"></span></label>`;
+    }).join('')}
+    <label class="tgl">${t('physFar')}<input type="checkbox" class="ck" data-phys ${physOn ? 'checked' : ''}></label>
+    <label class="tgl">${t('debugShort')}<input type="checkbox" class="ck" data-f="debug" ${s.debug ? 'checked' : ''}></label>
+  </div>`;
+}
 
 function render() {
   const s = state.settings;
@@ -297,12 +336,17 @@ function render() {
     <details id="adv" class="adv" ${state.advOpen ? 'open' : ''}>
       <summary>${t('advanced')}${ICON.chev}</summary>
       <div class="advbody">
-        ${settingsForm(s, 'g')}
-        <div class="form" data-path="g">
-          <label class="fld">${t('mem')} <select data-f="memoryMode">${['full', 'minimal', 'none'].map((m) => opt(m, t('mem_' + m), s.memoryMode)).join('')}</select></label>
-          <label class="tgl">${t('stand')}<input type="checkbox" class="ck" data-f="armorStand" ${s.armorStand ? 'checked' : ''}></label>
-          <label class="tgl">${t('debug')}<input type="checkbox" class="ck" data-f="debug" ${s.debug ? 'checked' : ''}></label>
-        </div>
+        <div class="form" data-path="g">${simpleControls(s)}</div>
+        <details id="expert" class="expert" ${state.expertOpen ? 'open' : ''}>
+          <summary>${t('expert')}${ICON.chev}</summary>
+          <div class="advbody">
+            ${settingsForm(s, 'g')}
+            <div class="form" data-path="g">
+              <label class="fld">${t('mem')} <select data-f="memoryMode">${['full', 'minimal', 'none'].map((m) => opt(m, t('mem_' + m), s.memoryMode)).join('')}</select></label>
+              <label class="tgl">${t('stand')}<input type="checkbox" class="ck" data-f="armorStand" ${s.armorStand ? 'checked' : ''}></label>
+            </div>
+          </div>
+        </details>
       </div>
     </details>
   </section>
@@ -330,6 +374,14 @@ app.addEventListener('change', (e) => {
   if (el.id === 'showall') state.showAll = el.checked;
   else if (el.dataset.sel) el.checked ? state.selected.add(el.dataset.sel) : state.selected.delete(el.dataset.sel);
   else if (el.dataset.dup) state.dupChoice[el.dataset.dup] = el.value;
+  else if (el.dataset.slider) {
+    state.sliders[el.dataset.slider] = Number(el.value);
+    applySlider(el.dataset.slider, Number(el.value));
+    state.preset = null;
+  } else if (el.dataset.phys !== undefined) {
+    state.settings = normalizeSettings({ ...state.settings, physicsOffFrom: el.checked ? 1 : state.settings.lodCount + 1 });
+    state.preset = null;
+  }
   else if (el.dataset.ov) {
     if (el.checked) state.overrides[el.dataset.ov] = structuredClone(state.settings);
     else delete state.overrides[el.dataset.ov];
@@ -348,11 +400,29 @@ app.addEventListener('change', (e) => {
   save();
   render();
 });
+app.addEventListener('input', (e) => {
+  const el = e.target;
+  if (!el.dataset.slider) return;
+  const o = SLIDERS.find((x) => x.k === el.dataset.slider);
+  const v = Number(el.value);
+  const box = el.closest('.sl');
+  box.querySelector('.fill').style.width = pct(o, v);
+  box.querySelector('.thumb').style.left = pct(o, v);
+  box.querySelector('b').textContent = sliderText(o.k, v);
+});
+app.addEventListener('pointerdown', (e) => e.target.dataset?.slider && e.target.closest('.sl').classList.add('drag'));
+app.addEventListener('pointerup', (e) => e.target.dataset?.slider && e.target.closest('.sl').classList.remove('drag'));
 app.addEventListener('toggle', (e) => {
+  if (e.target.id === 'expert') state.expertOpen = e.target.open;
   if (e.target.id === 'adv') state.advOpen = e.target.open;
   if (e.target.id === 'how') state.howOpen = e.target.open;
 }, true);
+const DETAILS_STATE = { adv: 'advOpen', expert: 'expertOpen', how: 'howOpen' };
 app.addEventListener('click', (e) => {
+  // remember <details> state at click time, so a re-render in between cannot close it
+  const sm = e.target.closest('summary');
+  const key = sm && DETAILS_STATE[sm.parentElement.id];
+  if (key) state[key] = !sm.parentElement.open;
   const el = e.target.closest('button');
   if (!el) return;
   if (el.id === 'lang') {
@@ -363,6 +433,7 @@ app.addEventListener('click', (e) => {
     const keep = { debug: state.settings.debug, armorStand: state.settings.armorStand };
     state.settings = normalizeSettings({ ...structuredClone(PRESETS[el.dataset.preset]), ...keep });
     state.preset = el.dataset.preset;
+    state.sliders = { ...PRESET_SLIDERS[state.preset] };
     save();
   } else if (el.id === 'all') state.armors.forEach((a) => isChosen(a) && (state.showAll || a.likelyArmor) && state.selected.add(a.key));
   else if (el.id === 'nonesel') state.selected.clear();
