@@ -37,6 +37,11 @@ const state = {
   showAll: false,
   busy: false,
   result: null,
+  preset: store.get('preset', 'balanced'), // null = custom
+  open: {}, // armor key → preview open
+  previews: {}, // armor key → { sig, levels:[{r,url}] }
+  advOpen: false,
+  howOpen: false,
 };
 const t = (k) => STR[state.lang][k] ?? k;
 const $ = (s, el = document) => el.querySelector(s);
@@ -47,6 +52,7 @@ worker.onmessage = ({ data: m }) => {
   if (m.type === 'progress') setProgress(m.p, m.msg);
   else if (m.type === 'scanned') onScanned(m);
   else if (m.type === 'built') onBuilt(m);
+  else if (m.type === 'preview') onPreview(m);
   else if (m.type === 'error') {
     state.busy = false;
     setProgress(null);
@@ -107,7 +113,8 @@ function onBuilt(m) {
   if (state.result?.url) URL.revokeObjectURL(state.result.url);
   state.result = { url: URL.createObjectURL(blob), blob, fileName: m.fileName, version: m.packState.version, report: m.report };
   render();
-  $('#result')?.scrollIntoView({ behavior: 'smooth' });
+  $('#dl')?.click();
+  $('#result')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function share() {
@@ -122,8 +129,27 @@ async function share() {
 }
 
 function save() {
+  store.set('preset', state.preset);
   store.set('settings', state.settings);
   store.set('overrides', state.overrides);
+}
+
+// ---------- level preview (real texture, downscaled in the worker) ----------
+const effSettings = (key) => settingsFor(state.settings, state.overrides[key]);
+const previewSig = (key) => JSON.stringify(effSettings(key));
+function requestPreview(key) {
+  const sig = previewSig(key);
+  const p = state.previews[key];
+  if (p && (p.sig === sig || p.pending === sig)) return;
+  state.previews[key] = { ...(p || {}), pending: sig };
+  worker.postMessage({ type: 'preview', key, id: sig, settings: state.settings, override: state.overrides[key] });
+}
+function onPreview(m) {
+  const old = state.previews[m.key];
+  if (old?.pending !== m.id) return;
+  old.levels?.forEach((l) => URL.revokeObjectURL(l.url));
+  state.previews[m.key] = { sig: m.id, levels: m.levels.map((l) => ({ r: l.r, url: URL.createObjectURL(new Blob([l.png], { type: 'image/png' })) })) };
+  render();
 }
 
 // ---------- rendering ----------
@@ -139,28 +165,39 @@ function setProgress(p, msg = '') {
 
 const opt = (v, label, cur) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(label)}</option>`;
 
-/** Settings form; `path` = 'g' for global or armor key for overrides. */
+const ICON = {
+  shield: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/></svg>',
+  upload: '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M6 10l6-6 6 6M4 20h16"/></svg>',
+  down: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>',
+  share: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 12v8h14v-8"/></svg>',
+  chev: '<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+};
+
+const stepHead = (n, title, extra = '') =>
+  `<div class="head"><div class="title"><span class="num">${n}</span><h2>${title}</h2></div>${extra}</div>`;
+
+/** Advanced settings form; `path` = 'g' for global or armor key for overrides. */
 function settingsForm(s, path) {
   const lv = s.levels;
-  let rows = `<div class="row"><b>${t('lod0')}</b><label>${t('until')} <input type="number" min="1" step="1" data-f="levels.0.distance" value="${lv[0].distance}"></label></div>`;
+  let rows = `<div class="lv"><b>${t('lod0')}</b><label class="fld">${t('until')} <input type="number" min="1" step="1" data-f="levels.0.distance" value="${lv[0].distance}"></label></div>`;
   for (let i = 1; i <= s.lodCount; i++) {
     const last = i === s.lodCount;
-    rows += `<div class="row lv lv${i}"><b>${t('level')} ${i}</b>
-      ${last ? '' : `<label>${t('until')} <input type="number" min="1" step="1" data-f="levels.${i}.distance" value="${lv[i].distance}"></label>`}
-      <label>${t('res')} <select data-f="levels.${i}.resolution">${RESOLUTIONS.map((r) => opt(r, r * 100 + '%', lv[i].resolution)).join('')}</select></label>
-      <label>${t('minCube')} <input type="number" min="0" step="0.5" data-f="levels.${i}.minCubeSize" value="${lv[i].minCubeSize}"></label>
-      <label class="chk"><input type="checkbox" data-f="levels.${i}.dedupePlanes" ${lv[i].dedupePlanes ? 'checked' : ''}> ${t('dedupe')}</label></div>`;
+    rows += `<div class="lv"><b><i class="dot d${i}"></i>${t('level')} ${i}</b>
+      ${last ? '' : `<label class="fld">${t('until')} <input type="number" min="1" step="1" data-f="levels.${i}.distance" value="${lv[i].distance}"></label>`}
+      <label class="fld">${t('res')} <select data-f="levels.${i}.resolution">${RESOLUTIONS.map((r) => opt(r, r * 100 + '%', lv[i].resolution)).join('')}</select></label>
+      <label class="fld">${t('minCube')} <input type="number" min="0" step="0.5" data-f="levels.${i}.minCubeSize" value="${lv[i].minCubeSize}"></label>
+      <label class="tgl">${t('dedupe')}<input type="checkbox" class="ck" data-f="levels.${i}.dedupePlanes" ${lv[i].dedupePlanes ? 'checked' : ''}></label></div>`;
   }
   const phys = [];
   for (let i = 0; i <= s.lodCount; i++) phys.push(opt(i, `${t('level')} ${i}`, s.physicsOffFrom));
   phys.push(opt(s.lodCount + 1, t('never'), s.physicsOffFrom));
   const errs = validateSettings(s);
   return `<div class="form" data-path="${esc(path)}">
-    <label>${t('lodCount')} <select data-f="lodCount">${[1, 2, 3, 4].slice(0, MAX_LODS).map((n) => opt(n, n, s.lodCount)).join('')}</select></label>
+    <label class="fld">${t('lodCount')} <select data-f="lodCount">${[1, 2, 3, 4].slice(0, MAX_LODS).map((n) => opt(n, n, s.lodCount)).join('')}</select></label>
     ${rows}
-    <label>${t('physOff')} <select data-f="physicsOffFrom">${phys.join('')}</select></label>
-    <div class="row"><label class="chk"><input type="checkbox" data-f="hide.enabled" ${s.hide.enabled ? 'checked' : ''}> ${t('hide')}</label>
-      <input type="number" min="1" data-f="hide.distance" value="${s.hide.distance}" ${s.hide.enabled ? '' : 'disabled'}></div>
+    <label class="fld">${t('physOff')} <select data-f="physicsOffFrom">${phys.join('')}</select></label>
+    <label class="tgl">${t('hide')}<input type="checkbox" class="ck" data-f="hide.enabled" ${s.hide.enabled ? 'checked' : ''}></label>
+    ${s.hide.enabled ? `<label class="fld">${t('until')} <input type="number" min="1" data-f="hide.distance" value="${s.hide.distance}"></label>` : ''}
     ${errs.length ? `<p class="err">${t('errOrder')}</p>` : ''}
   </div>`;
 }
@@ -172,72 +209,117 @@ function setField(obj, f, val) {
   o[parts.at(-1)] = val;
 }
 
+/** Preview tiles: one per LOD level (+ a hidden tile when hiding is on). */
+function previewStrip(a) {
+  const s = effSettings(a.key);
+  const p = state.previews[a.key];
+  if (!p?.levels) {
+    requestPreview(a.key);
+    return `<div class="prev"><p class="muted center">${a.texW ? '…' : t('noPreview')}</p></div>`;
+  }
+  if (p.sig !== previewSig(a.key)) requestPreview(a.key);
+  if (!p.levels.length) return `<div class="prev"><p class="muted center">${t('noPreview')}</p></div>`;
+  const ends = [...s.levels.slice(0, s.lodCount).map((l) => l.distance), s.hide.enabled ? s.hide.distance : '∞'];
+  const tiles = p.levels.map((l, i) => {
+    const from = i === 0 ? 0 : ends[i - 1];
+    return { url: l.url, label: i === 0 ? t('original') : l.r === 1 ? '100%' : l.r * 100 + '%', dist: `${from}–${ends[i]} ${t('blocks')}`, hidden: false };
+  });
+  if (s.hide.enabled) tiles.push({ url: p.levels.at(-1).url, label: t('hiddenLbl'), dist: `${s.hide.distance}+ ${t('blocks')}`, hidden: true });
+  return `<div class="prev" style="grid-template-columns:repeat(${Math.min(tiles.length, 5)},1fr)">${tiles
+    .map((x) => `<div class="tile ${x.hidden ? 'hid' : ''}"><img src="${x.url}" alt="${esc(x.label)}"><span class="lbl">${esc(x.label)}</span><span class="dist">${esc(x.dist)}</span></div>`)
+    .join('')}</div>`;
+}
+
+const PRESET_KEYS = ['saver', 'balanced', 'quality'];
+
 function render() {
   const s = state.settings;
   const sel = state.armors.filter((a) => state.selected.has(a.key) && isChosen(a));
   const mb = sel.reduce((sum, a) => sum + estimateExtraMB([a], settingsFor(s, state.overrides[a.key])), 0);
   const visible = state.armors.filter((a) => state.showAll || a.likelyArmor);
   const dupIds = new Set(state.duplicates.map((d) => d.identifier));
+  const pi = PRESET_KEYS.indexOf(state.preset);
 
   $('#app').innerHTML = `
+  <div class="wrap">
   <header>
-    <h1>SleepyArmor <span>Lite</span></h1>
-    <button id="lang" class="ghost">${state.lang === 'th' ? 'EN' : 'ไทย'}</button>
-    <p>${t('tagline')}</p>
+    <div class="top">
+      <div class="brand"><span class="logo">${ICON.shield}</span><span>SleepyArmor Lite</span></div>
+      <button id="lang" type="button" class="pill">TH / EN</button>
+    </div>
+    <div class="hero"><h1>${t('heroTitle')}</h1><p>${t('heroSub')}</p></div>
   </header>
 
-  <section><h2>${t('s1')}</h2>
-    <label class="file ${state.busy ? 'off' : ''}"><input id="files" type="file" multiple ${state.busy ? 'disabled' : ''}>${t('pick')}</label>
+  <section class="card">
+    ${stepHead(1, t('s1n'))}
+    <label class="drop ${state.busy ? 'off' : ''}">${ICON.upload}<span class="big">${t('tap')}</span><span class="muted sm">${t('types')}</span>
+      <input id="files" type="file" multiple ${state.busy ? 'disabled' : ''}></label>
     <div id="progress" hidden><div class="track"><div id="bar"></div></div><small id="pmsg"></small></div>
-    ${state.skipped.length ? `<details open><summary>${t('skipped')} (${state.skipped.length})</summary><ul>${state.skipped.map((x) => `<li>${esc(x.name)} — ${t('reason_' + x.reason)}</li>`).join('')}</ul></details>` : ''}
-    ${state.warnings.length ? `<details><summary>${t('warnings')} (${state.warnings.length})</summary><ul class="small">${state.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></details>` : ''}
+    ${state.skipped.length ? `<details class="note-box"><summary>${t('skipped')} (${state.skipped.length})${ICON.chev}</summary><ul>${state.skipped.map((x) => `<li>${esc(x.name)} — ${t('reason_' + x.reason)}</li>`).join('')}</ul></details>` : ''}
+    ${state.warnings.length ? `<details class="note-box"><summary>${t('warnings')} (${state.warnings.length})${ICON.chev}</summary><ul class="sm">${state.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></details>` : ''}
   </section>
 
-  <section><h2>${t('s2')}</h2>
-    ${!state.armors.length ? `<p class="muted">${t('none')}</p>` : `
-    <div class="bar"><button id="all" class="ghost">${t('selAll')}</button><button id="nonesel" class="ghost">${t('selNone')}</button>
-      <label class="chk"><input type="checkbox" id="showall" ${state.showAll ? 'checked' : ''}> ${t('showAll')}</label></div>
+  <section class="card">
+    ${stepHead(2, t('s2n'), state.armors.length ? `<button id="all" type="button" class="link">${t('selAll')}</button>` : '')}
+    ${!state.armors.length ? `<p class="muted sm">${t('none')}</p>` : `
     ${state.duplicates.map((d) => `<div class="dup"><b>${t('dup')}</b> <code>${esc(d.identifier)}</code>${d.keys.map((k) => {
       const a = state.armors.find((x) => x.key === k);
-      return `<label class="chk"><input type="radio" name="dup-${esc(d.identifier)}" data-dup="${esc(d.identifier)}" value="${esc(k)}" ${state.dupChoice[d.identifier] === k ? 'checked' : ''}> ${esc(a?.addonName || k)}</label>`;
+      return `<label class="tgl left"><input type="radio" class="ck round" name="dup-${esc(d.identifier)}" data-dup="${esc(d.identifier)}" value="${esc(k)}" ${state.dupChoice[d.identifier] === k ? 'checked' : ''}><span>${esc(a?.addonName || k)}</span></label>`;
     }).join('')}</div>`).join('')}
-    <ul class="armors">${visible.map((a) => {
+    ${visible.map((a) => {
       const ov = state.overrides[a.key];
       const off = !isChosen(a);
-      return `<li class="${off ? 'off' : ''}">
-        <label class="chk main"><input type="checkbox" data-sel="${esc(a.key)}" ${state.selected.has(a.key) && !off ? 'checked' : ''} ${off ? 'disabled' : ''}>
-          <span><b>${esc(a.identifier)}</b>${dupIds.has(a.identifier) ? ' ⚠️' : ''}<br><small>${esc(a.addonName)} · ${t('tex')} ${a.texW ? a.texW + '×' + a.texH : '?'} · ${a.cubeCount} ${t('cubes')} · ${t('molang')} ${a.molangLines}</small>
-          ${a.warnings.length ? `<br><small class="warn">${a.warnings.map(esc).join('; ')}</small>` : ''}</span></label>
-        <label class="chk"><input type="checkbox" data-ov="${esc(a.key)}" ${ov ? 'checked' : ''}> ${t('custom')}</label>
-        ${ov ? settingsForm(normalizeSettings({ ...s, ...ov }), a.key) : ''}
-      </li>`;
-    }).join('')}</ul>`}
+      const open = !!state.open[a.key];
+      return `<div class="armor ${off ? 'off' : ''}">
+        <div class="arow">
+          <label class="amain"><input type="checkbox" class="ck" data-sel="${esc(a.key)}" ${state.selected.has(a.key) && !off ? 'checked' : ''} ${off ? 'disabled' : ''}>
+            <span class="ainfo"><span class="aname">${esc(a.identifier)}${dupIds.has(a.identifier) ? ' ⚠' : ''}</span>
+            <span class="asub">${esc(a.addonName)} · ${a.texW ? a.texW + '×' + a.texH : '?'} · ${a.cubeCount} ${t('cubes')} · ${t('molang')} ${a.molangLines}</span></span></label>
+          <button type="button" class="icon ${open ? 'rot' : ''}" data-open="${esc(a.key)}" aria-label="${t('previewAria')}" aria-expanded="${open}">${ICON.chev}</button>
+        </div>
+        ${open ? `${previewStrip(a)}
+          ${a.warnings.length ? `<p class="warn sm pad">${a.warnings.map(esc).join('; ')}</p>` : ''}
+          <div class="pad"><label class="tgl">${t('custom')}<input type="checkbox" class="ck" data-ov="${esc(a.key)}" ${ov ? 'checked' : ''}></label>
+          ${ov ? settingsForm(normalizeSettings({ ...s, ...ov }), a.key) : ''}</div>` : ''}
+      </div>`;
+    }).join('')}
+    <label class="tgl sm muted">${t('showAll')}<input type="checkbox" class="ck" id="showall" ${state.showAll ? 'checked' : ''}></label>`}
   </section>
 
-  <section><h2>${t('s3')}</h2>
-    <div class="bar">${t('presets')}: ${['saver', 'balanced', 'quality'].map((p) => `<button data-preset="${p}">${t('p_' + p)}</button>`).join('')}</div>
-    ${settingsForm(s, 'g')}
-    <div class="form" data-path="g">
-      <label>${t('mem')} <select data-f="memoryMode">${['full', 'minimal', 'none'].map((m) => opt(m, t('mem_' + m), s.memoryMode)).join('')}</select></label>
-      <label class="chk"><input type="checkbox" data-f="armorStand" ${s.armorStand ? 'checked' : ''}> ${t('stand')}</label>
-      <label class="chk"><input type="checkbox" data-f="debug" ${s.debug ? 'checked' : ''}> ${t('debug')}</label>
+  <section class="card">
+    ${stepHead(3, t('s3n'))}
+    <div class="seg" role="radiogroup" aria-label="Preset">
+      <div class="seg-thumb" aria-hidden="true" style="transform:translateX(${Math.max(pi, 0) * 100}%);opacity:${pi < 0 ? 0 : 1}"></div>
+      ${PRESET_KEYS.map((p, i) => `<button type="button" role="radio" aria-checked="${i === pi}" class="${i === pi ? 'on' : ''}" data-preset="${p}">${t('p_' + p)}</button>`).join('')}
     </div>
+    <p class="hint">${pi < 0 ? t('h_custom') : t('h_' + state.preset)}</p>
     <p class="mem">${t('memEst')} <b>${mb.toFixed(2)} MB</b></p>
+    <details id="adv" class="adv" ${state.advOpen ? 'open' : ''}>
+      <summary>${t('advanced')}${ICON.chev}</summary>
+      <div class="advbody">
+        ${settingsForm(s, 'g')}
+        <div class="form" data-path="g">
+          <label class="fld">${t('mem')} <select data-f="memoryMode">${['full', 'minimal', 'none'].map((m) => opt(m, t('mem_' + m), s.memoryMode)).join('')}</select></label>
+          <label class="tgl">${t('stand')}<input type="checkbox" class="ck" data-f="armorStand" ${s.armorStand ? 'checked' : ''}></label>
+          <label class="tgl">${t('debug')}<input type="checkbox" class="ck" data-f="debug" ${s.debug ? 'checked' : ''}></label>
+        </div>
+      </div>
+    </details>
   </section>
 
-  <section><h2>${t('s4')}</h2>
-    <button id="build" class="primary" ${state.busy ? 'disabled' : ''}>${state.busy ? t('building') : t('build')}${s.debug ? ' (DEBUG)' : ''}</button>
-    ${state.result ? `<div id="result"><p>✅ ${t('done')} <b>${esc(state.result.fileName)}</b> (v1.0.${state.result.version}, ${(state.result.blob.size / 1048576).toFixed(2)} MB)</p>
-      <a id="dl" class="btn primary" href="${state.result.url}" download="${esc(state.result.fileName)}">⬇️ ${t('download')}</a>
-      <button id="share" class="btn">📤 ${t('share')}</button></div>` : ''}
-    <p class="note">${t('note')}</p>
-  </section>
+  <button id="build" type="button" class="cta" ${state.busy ? 'disabled' : ''}>${ICON.down}${state.busy ? t('building') : t('buildDl')}${s.debug ? ' (DEBUG)' : ''}</button>
+  ${state.result ? `<div id="result" class="card result"><p>${t('done')} <b>${esc(state.result.fileName)}</b> <span class="muted sm">v1.0.${state.result.version} · ${(state.result.blob.size / 1048576).toFixed(2)} MB</span></p>
+    <div class="btns"><a id="dl" class="btn" href="${state.result.url}" download="${esc(state.result.fileName)}">${ICON.down}${t('again')}</a>
+    <button id="share" type="button" class="btn">${ICON.share}${t('share')}</button></div></div>` : ''}
+  <p class="note">${t('note')}</p>
 
-  <section><h2>${t('s5')}</h2>
-    <ul><li>🤖 ${t('android')}</li><li>🍎 ${t('ios')}</li><li>🎮 ${t('after')}</li><li>🧪 ${t('debugHelp')}</li></ul>
-  </section>
+  <details id="how" class="card how" ${state.howOpen ? 'open' : ''}>
+    <summary>${t('howto')}${ICON.chev}</summary>
+    <ol><li>${t('android')}</li><li>${t('ios')}</li><li>${t('after')}</li><li>${t('debugHelp')}</li></ol>
+  </details>
 
-  <footer>${t('footer')} · <a href="https://github.com/samsosleepy2007/Minecraft-bedrock-client-for-roleplay" target="_blank" rel="noopener">${t('source')}</a></footer>`;
+  <footer>© 2026 SamSoSleepy · SleepyShop · GPL-3.0 · <a href="https://github.com/samsosleepy2007/Minecraft-bedrock-client-for-roleplay" target="_blank" rel="noopener">${t('source')}</a></footer>
+  </div>`;
 }
 
 // ---------- events (delegated) ----------
@@ -257,12 +339,19 @@ app.addEventListener('change', (e) => {
     const v = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' && el.dataset.f === 'memoryMode' ? el.value : Number(el.value);
     setField(target, el.dataset.f, v);
     const n = normalizeSettings(target);
-    if (path === 'g') state.settings = n;
+    if (path === 'g') {
+      state.settings = n;
+      if (!['memoryMode', 'armorStand', 'debug'].includes(el.dataset.f)) state.preset = null;
+    }
     else state.overrides[path] = n;
   } else return;
   save();
   render();
 });
+app.addEventListener('toggle', (e) => {
+  if (e.target.id === 'adv') state.advOpen = e.target.open;
+  if (e.target.id === 'how') state.howOpen = e.target.open;
+}, true);
 app.addEventListener('click', (e) => {
   const el = e.target.closest('button');
   if (!el) return;
@@ -273,9 +362,11 @@ app.addEventListener('click', (e) => {
   } else if (el.dataset.preset) {
     const keep = { debug: state.settings.debug, armorStand: state.settings.armorStand };
     state.settings = normalizeSettings({ ...structuredClone(PRESETS[el.dataset.preset]), ...keep });
+    state.preset = el.dataset.preset;
     save();
   } else if (el.id === 'all') state.armors.forEach((a) => isChosen(a) && (state.showAll || a.likelyArmor) && state.selected.add(a.key));
   else if (el.id === 'nonesel') state.selected.clear();
+  else if (el.dataset.open) state.open[el.dataset.open] = !state.open[el.dataset.open];
   else if (el.id === 'build') return build();
   else if (el.id === 'share') return share();
   else return;
