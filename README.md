@@ -41,7 +41,9 @@ npm ci
 npm test      # unit tests (Vitest)
 npm run dev   # dev server
 npm run build # -> dist/
+npm run pages # build + copy to repo root (index.html, assets/) — run before every push
 ```
+- `web/index.html` ซอร์สหน้าเว็บ · `index.html` + `assets/` ที่ root = เว็บที่ build แล้ว (ใช้ได้ทั้ง Source แบบ GitHub Actions และ Deploy from branch)
 - `src/core/` ตัวประมวลผล pack (scanner, molang, geometry, texture, builder, settings)
 - `src/worker.js` ประมวลผลใน Web Worker · `src/main.js` UI · `test/` unit test + fixture เกราะตัวอย่าง
 
