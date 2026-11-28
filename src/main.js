@@ -312,8 +312,6 @@ function simpleControls(s) {
         <span class="slt"><span class="rail"></span><span class="fill" style="width:${pct(o, v)}"></span><span class="thumb" style="left:${pct(o, v)}"></span>
         <input type="range" min="${o.min}" max="${o.max}" value="${v}" data-slider="${o.k}" aria-label="${t('sl_' + o.k)}"></span></label>`;
     }).join('')}
-    <label class="fld">${t('gate')} <select data-f="gate">${['all', 'graphics'].map((g) => opt(g, t('gate_' + g), s.gate)).join('')}</select></label>
-    ${s.gate !== 'all' ? `<p class="hint">${t('gateHelp_' + s.gate)}</p>` : ''}
     <label class="tgl">${t('physFar')}<input type="checkbox" class="ck" data-phys ${physOn ? 'checked' : ''}></label>
     <label class="tgl">${t('debugShort')}<input type="checkbox" class="ck" data-f="debug" ${s.debug ? 'checked' : ''}></label>
   </div>`;
@@ -387,6 +385,12 @@ function render() {
       ${PRESET_KEYS.map((p, i) => `<button type="button" role="radio" aria-checked="${i === pi}" class="${i === pi ? 'on' : ''}" data-preset="${p}">${t('p_' + p)}</button>`).join('')}
     </div>
     <p class="hint">${pi < 0 ? t('h_custom') : t('h_' + state.preset)}</p>
+    <div class="form" data-path="g">
+      <p class="sub">${t('gate')}</p>
+      <div class="choice" role="radiogroup" aria-label="${t('gate')}">
+        ${['all', 'graphics'].map((g) => `<label class="opt ${s.gate === g ? 'on' : ''}"><input type="radio" class="ck round" name="gate" data-f="gate" value="${g}" ${s.gate === g ? 'checked' : ''}><span><b>${t('gate_' + g)}</b><small>${t('gateHelp_' + g)}</small></span></label>`).join('')}
+      </div>
+    </div>
     <p class="mem">${t('memEst')} <b>${mb.toFixed(2)} MB</b></p>
     <details id="adv" class="adv" ${state.advOpen ? 'open' : ''}>
       <summary>${t('advanced')}${ICON.chev}</summary>
@@ -445,7 +449,7 @@ app.addEventListener('change', (e) => {
   } else if (el.dataset.f) {
     const path = el.closest('[data-path]').dataset.path;
     const target = path === 'g' ? state.settings : (state.overrides[path] = normalizeSettings({ ...state.settings, ...state.overrides[path] }));
-    const v = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' && (el.dataset.f === 'memoryMode' || el.dataset.f === 'gate') ? el.value : Number(el.value);
+    const v = el.type === 'checkbox' ? el.checked : (el.tagName === 'SELECT' && el.dataset.f === 'memoryMode') || el.dataset.f === 'gate' ? el.value : Number(el.value);
     setField(target, el.dataset.f, v);
     const n = normalizeSettings(target);
     if (path === 'g') {
