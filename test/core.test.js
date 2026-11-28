@@ -57,7 +57,7 @@ describe('pre_animation transform', () => {
   });
   it('viewer gate wraps the LOD expression', () => {
     const l = lodLine([8], gateExpr('graphics'));
-    expect(l).toBe("v.sl_d = q.distance_from_camera; v.sl_lod = (q.graphics_mode_is_any('simple')) ? (v.sl_d < 8.0 ? 0 : (1)) : 0;");
+    expect(l).toBe("v.sl_d = q.distance_from_camera; v.sl_lod = v.sl_d < 8.0 ? 0 : (1); v.sl_lod = v.sl_lod * (q.graphics_mode_is_any('simple'));");
     expect(gateExpr('all')).toBe(null);
     expect(normalizeSettings({ gate: 'render' }).gate).toBe('all');
     expect(bracesBalanced(l)).toBe(true);

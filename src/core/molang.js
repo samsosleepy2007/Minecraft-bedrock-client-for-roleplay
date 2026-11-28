@@ -52,8 +52,10 @@ export function lodLine(thresholds, gate = null) {
     expr = i === 0 ? `v.sl_d < ${d} ? 0 : (${expr})` : `(v.sl_d < ${d} ? ${i} : (${expr}))`;
   }
   // flatten outer redundant parens of first-level form
-  if (gate) expr = `(${gate}) ? (${expr}) : 0`;
-  return `v.sl_d = q.distance_from_camera; v.sl_lod = ${expr};`;
+  // Gate without a nested ternary (a ternary inside the true-branch of another did not work in game):
+  // the gate query returns 1.0/0.0, so multiplying keeps the distance level or forces level 0.
+  const gated = gate ? ` v.sl_lod = v.sl_lod * (${gate});` : '';
+  return `v.sl_d = q.distance_from_camera; v.sl_lod = ${expr};${gated}`;
 }
 
 const fmt = (n) => (Number.isInteger(n) ? `${n}.0` : String(n));
