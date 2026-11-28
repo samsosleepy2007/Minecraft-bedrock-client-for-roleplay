@@ -427,11 +427,10 @@ function render() {
   ${state.result ? `<div id="result" class="card result"><p>${t('done')} <b>${esc(state.result.fileName)}</b> <span class="muted sm">v1.0.${state.result.version} · ${(state.result.blob.size / 1048576).toFixed(2)} MB</span></p>
     <div class="btns"><a id="dl" class="btn" href="${state.result.url}" download="${esc(state.result.fileName)}">${ICON.down}${t('again')}</a>
     <button id="share" type="button" class="btn">${ICON.share}${t('share')}</button></div></div>` : ''}
-  <p class="note">${t('note')}</p>
 
   <details id="how" class="card how" ${state.howOpen ? 'open' : ''}>
     <summary>${t('howto')}${ICON.chev}</summary>
-    <ol><li>${t('android')}</li><li>${t('ios')}</li><li>${t('after')}</li><li>${t('afterWorld')}</li><li>${t('afterServer')}</li><li>${t('debugHelp')}</li></ol>
+    <ol><li>${t('android')}</li><li>${t('ios')}</li><li>${t('afterWorld')}</li><li>${t('afterServer')}</li></ol>
   </details>
 
   <footer>© 2026 SamSoSleepy · SleepyShop · GPL-3.0 · <a href="https://github.com/samsosleepy2007/Minecraft-bedrock-client-for-roleplay" target="_blank" rel="noopener">${t('source')}</a></footer>
