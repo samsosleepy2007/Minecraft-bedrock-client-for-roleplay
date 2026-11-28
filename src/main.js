@@ -231,8 +231,7 @@ function profileForm(s, path, prefix, minCount, title) {
     rows += `<div class="lv"><b><i class="dot d${i}"></i>${t('level')} ${i}</b>
       ${last ? '' : `<label class="fld">${t('until')} <input type="number" min="1" step="1" data-f="${f(`levels.${i}.distance`)}" value="${lv[i].distance}"></label>`}
       <label class="fld">${t('res')} <select data-f="${f(`levels.${i}.resolution`)}">${RESOLUTIONS.map((r) => opt(r, r * 100 + '%', lv[i].resolution)).join('')}</select></label>
-      <label class="fld">${t('minCube')} <input type="number" min="0" step="0.5" data-f="${f(`levels.${i}.minCubeSize`)}" value="${lv[i].minCubeSize}"></label>
-      <label class="tgl">${t('dedupe')}<input type="checkbox" class="ck" data-f="${f(`levels.${i}.dedupePlanes`)}" ${lv[i].dedupePlanes ? 'checked' : ''}></label></div>`;
+      <label class="fld">${t('minCube')} <input type="number" min="0" step="0.5" data-f="${f(`levels.${i}.minCubeSize`)}" value="${lv[i].minCubeSize}"></label></div>`;
   }
   const phys = [];
   for (let i = 0; i <= s.lodCount; i++) phys.push(opt(i, `${t('level')} ${i}`, s.physicsOffFrom));

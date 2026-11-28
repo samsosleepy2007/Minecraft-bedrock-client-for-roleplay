@@ -217,7 +217,7 @@ describe('scan + build (fixture)', () => {
     // geometry cube counts drop
     const g1 = JSON.parse(await z.file('models/entity/sl_lod/sleepy_sample/sleepy_sample_sleepy_hair_lod1.geo.json').async('string'));
     expect(g1['minecraft:geometry'][0].description.identifier).toBe(att.geometry.lod1);
-    expect(countCubes(g1['minecraft:geometry'][0])).toBe(3);
+    expect(countCubes(g1['minecraft:geometry'][0])).toBe(5); // tiny cubes removed (plane dedupe is off)
     expect(g1['minecraft:geometry'][0].bones).toHaveLength(5);
 
     // render controller

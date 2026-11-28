@@ -28,7 +28,7 @@ const L = (distance, resolution, minCubeSize = 0, dedupePlanes = false) => ({ di
 export const PRESETS = {
   saver: {
     lodCount: 3,
-    levels: [L(8, 1), L(16, 0.25, 1, true), L(32, 0.125, 2, true), L(48, 0.125, 3, true), L(64, 0.125, 3, true)],
+    levels: [L(8, 1), L(16, 0.25, 1), L(32, 0.125, 2), L(48, 0.125, 3), L(64, 0.125, 3)],
     physicsOffFrom: 1,
     hide: { enabled: true, distance: 48 },
     memoryMode: 'full',
@@ -37,7 +37,7 @@ export const PRESETS = {
   },
   balanced: {
     lodCount: 2,
-    levels: [L(8, 1), L(20, 0.5, 0.5, true), L(40, 0.25, 1, true), L(56, 0.125, 2, true), L(72, 0.125, 2, true)],
+    levels: [L(8, 1), L(20, 0.5, 0.5), L(40, 0.25, 1), L(56, 0.125, 2), L(72, 0.125, 2)],
     physicsOffFrom: 1,
     hide: { enabled: true, distance: 64 },
     memoryMode: 'full',
@@ -46,7 +46,7 @@ export const PRESETS = {
   },
   quality: {
     lodCount: 1,
-    levels: [L(8, 1), L(32, 0.5, 0, true), L(48, 0.25, 0.5, true), L(64, 0.125, 1, true), L(80, 0.125, 1, true)],
+    levels: [L(8, 1), L(32, 0.5, 0), L(48, 0.25, 0.5), L(64, 0.125, 1), L(80, 0.125, 1)],
     physicsOffFrom: 2,
     hide: { enabled: false, distance: 96 },
     memoryMode: 'full',
@@ -66,7 +66,7 @@ function normLevels(src, base) {
       distance: Math.max(1, Number(l.distance) || base.levels[i].distance),
       resolution: RESOLUTIONS.includes(Number(l.resolution)) ? Number(l.resolution) : base.levels[i].resolution,
       minCubeSize: Math.max(0, Number(l.minCubeSize) || 0),
-      dedupePlanes: !!l.dedupePlanes,
+      dedupePlanes: false, // option removed from the UI (not needed); always off
     });
   }
   return lv;
