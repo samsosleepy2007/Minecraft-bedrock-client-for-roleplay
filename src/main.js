@@ -326,6 +326,7 @@ function simpleControls(s) {
         <input type="range" min="${o.min}" max="${o.max}" value="${v}" data-slider="${o.k}" aria-label="${t('sl_' + o.k)}"></span></label>`;
     }).join('')}
     <label class="tgl">${t('physFar')}<input type="checkbox" class="ck" data-phys ${physOn ? 'checked' : ''}></label>
+    ${state.armors.some((a) => a.glow) ? `<label class="tgl">${t('glowOff')}<input type="checkbox" class="ck" data-f="glowOff" ${s.glowOff ? 'checked' : ''}></label>` : ''}
     <label class="tgl">${t('debugShort')}<input type="checkbox" class="ck" data-f="debug" ${s.debug ? 'checked' : ''}></label>
   </div>`;
 }
@@ -373,7 +374,7 @@ function render() {
       const open = !!state.open[g.id];
       const multi = g.members.length > 1;
       const title = multi ? `${(a.geoId || a.identifier).replace(/^geometry\./, '')} · ${g.members.length} ${t('pieces')}` : a.identifier;
-      const stats = `${a.texW ? a.texW + '×' + a.texH : '?'} · ${a.cubeCount} ${t('cubes')}${a.polyCount ? ` · ${a.polyCount} mesh` : ''} · ${t('molang')} ${a.molangLines}`;
+      const stats = `${a.texW ? a.texW + '×' + a.texH : '?'} · ${a.cubeCount} ${t('cubes')}${a.polyCount ? ` · ${a.polyCount} mesh` : ''}${a.glow ? ` · ${t('glowTag')}` : ''} · ${t('molang')} ${a.molangLines}`;
       return `<div class="armor ${off ? 'off' : ''}">
         <div class="arow">
           <label class="amain"><input type="checkbox" class="ck" data-sel="${esc(g.id)}" ${on ? 'checked' : ''} ${off ? 'disabled' : ''}>
@@ -466,7 +467,7 @@ app.addEventListener('change', (e) => {
     const n = normalizeSettings(target);
     if (path === 'g') {
       state.settings = n;
-      if (!['memoryMode', 'armorStand', 'debug', 'gate'].includes(el.dataset.f) && !el.dataset.f.startsWith('fancy.')) state.preset = null;
+      if (!['memoryMode', 'armorStand', 'debug', 'gate', 'glowOff'].includes(el.dataset.f) && !el.dataset.f.startsWith('fancy.')) state.preset = null;
     }
     else state.overrides[path] = n;
   } else return;
@@ -513,7 +514,7 @@ app.addEventListener('click', (e) => {
     store.set('lang', state.lang);
     document.documentElement.lang = state.lang;
   } else if (el.dataset.preset) {
-    const keep = { debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, fancy: state.settings.fancy };
+    const keep = { glowOff: state.settings.glowOff, debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, fancy: state.settings.fancy };
     state.settings = normalizeSettings({ ...structuredClone(PRESETS[el.dataset.preset]), ...keep });
     state.preset = el.dataset.preset;
     state.sliders = { ...PRESET_SLIDERS[state.preset] };
@@ -529,7 +530,7 @@ app.addEventListener('click', (e) => {
 
 // a chosen preset always uses its current definition (old saved values may be outdated)
 if (PRESETS[state.preset]) {
-  state.settings = normalizeSettings({ ...structuredClone(PRESETS[state.preset]), debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, fancy: state.settings.fancy });
+  state.settings = normalizeSettings({ ...structuredClone(PRESETS[state.preset]), glowOff: state.settings.glowOff, debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, fancy: state.settings.fancy });
 }
 document.documentElement.lang = state.lang;
 render();

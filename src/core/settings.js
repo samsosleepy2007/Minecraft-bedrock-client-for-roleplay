@@ -91,6 +91,7 @@ export function normalizeSettings(s) {
   o.memoryMode = ['full', 'minimal', 'none'].includes(o.memoryMode) ? o.memoryMode : 'full';
   o.armorStand = o.armorStand !== false;
   o.debug = !!o.debug;
+  o.glowOff = o.glowOff !== false; // switch glow off on reduced levels (default on)
   o.gate = o.gate === 'graphics' ? 'graphics' : 'all';
   delete o.gateRender;
   const f = { ...defaultFancy(), ...(s?.fancy || {}) };

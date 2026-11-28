@@ -3,7 +3,7 @@
 import JSZip from 'jszip';
 import { parseBedrockJson } from './json.js';
 import { listGeometries, countCubes, countPolys } from './geometry.js';
-import { pngSize } from './texture.js';
+import { imageSize, canDecode } from './texture.js';
 import { countMolang } from './molang.js';
 
 const dec = new TextDecoder();
@@ -130,6 +130,16 @@ async function indexPack(files, root, warnings) {
   return { root, local, attachables, geometries, controllers, animations, findTexture };
 }
 
+/** Emissive (glowing) material used by the main render controller, e.g. { key: 'glow', material: 'entity_emissive_alpha' }. */
+function findGlow(d, rc) {
+  const mats = d.materials || {};
+  const keys = [];
+  for (const e of rc?.materials || []) for (const v of Object.values(e)) if (typeof v === 'string') keys.push(...[...v.matchAll(/Material\.(\w+)/g)].map((m) => m[1]));
+  if (!rc) keys.push('default');
+  for (const k of keys) if (/emissive|glow/i.test(String(mats[k] || ''))) return { key: k, material: String(mats[k]) };
+  return null;
+}
+
 const ARMOR_HINT = /armor|helmet|chest|legging|boot|hair|head/i;
 
 function describeArmor(att, rel, pack, warnings) {
@@ -147,7 +157,7 @@ function describeArmor(att, rel, pack, warnings) {
   const w = [];
   if (!geo) w.push(`geometry ${geoId || '?'} not in pack`);
   if (!tex) w.push(`texture ${texRef || '?'} not in pack`);
-  else if (tex.ext.toLowerCase() !== '.png') w.push(`texture ${tex.path} is not PNG (kept original)`);
+  else if (!canDecode(tex.path)) w.push(`texture ${tex.path} is not PNG/TGA (kept original)`);
   const itemLike = rcs.some((r) => /item/i.test(r));
   const likelyArmor = (!itemLike && geo && (geo.def.bones || []).length >= 3) || ARMOR_HINT.test(material) || rcs.some((r) => /armor/i.test(r)) || ARMOR_HINT.test(d.identifier) || ARMOR_HINT.test(rel);
   return {
@@ -169,6 +179,7 @@ function describeArmor(att, rel, pack, warnings) {
     renderControllers: rcs,
     controllerDefs: Object.fromEntries(rcs.filter((n) => pack.controllers.has(n)).map((n) => [n, pack.controllers.get(n)])),
     likelyArmor,
+    glow: findGlow(d, rcs.length ? pack.controllers.get(rcs[0]) : null),
     warnings: w,
     pack,
   };
@@ -177,8 +188,8 @@ function describeArmor(att, rel, pack, warnings) {
 /** Fill texW/texH by reading PNG header (cheap). */
 export async function readTextureSizes(armors) {
   for (const a of armors) {
-    if (a.texture && a.texture.ext.toLowerCase() === '.png') {
-      const s = pngSize(await a.texture.file.async('uint8array'));
+    if (a.texture && canDecode(a.texture.path)) {
+      const s = imageSize(await a.texture.file.async('uint8array'), a.texture.path);
       if (s) {
         a.texW = s.width;
         a.texH = s.height;
@@ -209,5 +220,6 @@ export const summarize = (a) => ({
   geoId: a.geometry?.id || '',
   molangLines: a.molangLines,
   likelyArmor: a.likelyArmor,
+  glow: !!a.glow,
   warnings: a.warnings,
 });

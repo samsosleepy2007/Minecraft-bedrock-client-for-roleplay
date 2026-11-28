@@ -87,7 +87,15 @@ export function downscale(img, scale, opt = {}) {
         out[o + 2] = b / a;
       }
       let alpha = a / n;
-      if (opt.alphaMode !== 'blend') alpha = alpha >= 128 ? 255 : 0;
+      if (opt.alphaMode === 'emissive') {
+        // keep the glow mask values (e.g. alpha 10) instead of thresholding them away
+        let nz = 0, sum = 0;
+        for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) {
+          const al = src[(yy * img.width + xx) * 4 + 3];
+          if (al > 0) { nz++; sum += al; }
+        }
+        alpha = nz * 2 >= n ? sum / nz : 0;
+      } else if (opt.alphaMode !== 'blend') alpha = alpha >= 128 ? 255 : 0;
       out[o + 3] = alpha;
     }
   }
@@ -110,3 +118,74 @@ export function tint(img, rgb, amount = 0.6) {
 
 /** Approx GPU memory of an RGBA8 texture incl. mipmaps (MB). */
 export const textureMB = (w, h) => (w * h * 4 * 1.333) / (1024 * 1024);
+
+/** TGA size from header (uncompressed or RLE true-colour). */
+export function tgaSize(bytes) {
+  if (!bytes || bytes.length < 18) return null;
+  const type = bytes[2];
+  if (![2, 3, 10, 11].includes(type)) return null;
+  return { width: bytes[12] | (bytes[13] << 8), height: bytes[14] | (bytes[15] << 8) };
+}
+
+/** Decode TGA (types 2/10 true-colour 24/32-bit, 3/11 greyscale; RLE supported) → RGBA8. */
+export function decodeTga(bytes) {
+  const idLen = bytes[0], cmapType = bytes[1], type = bytes[2];
+  if (![2, 3, 10, 11].includes(type)) throw new Error(`Unsupported TGA type ${type}`);
+  const cmapLen = bytes[5] | (bytes[6] << 8), cmapDepth = bytes[7];
+  const width = bytes[12] | (bytes[13] << 8), height = bytes[14] | (bytes[15] << 8);
+  const bpp = bytes[16] >> 3, desc = bytes[17];
+  const topDown = (desc & 0x20) !== 0, rightToLeft = (desc & 0x10) !== 0;
+  let p = 18 + idLen + (cmapType ? cmapLen * Math.ceil(cmapDepth / 8) : 0);
+  const n = width * height;
+  const px = new Uint8Array(n * bpp);
+  if (type === 2 || type === 3) px.set(bytes.subarray(p, p + n * bpp));
+  else {
+    let o = 0;
+    while (o < px.length && p < bytes.length) {
+      const h = bytes[p++];
+      const count = (h & 0x7f) + 1;
+      if (h & 0x80) {
+        for (let k = 0; k < count; k++) for (let c = 0; c < bpp; c++) px[o++] = bytes[p + c];
+        p += bpp;
+      } else {
+        px.set(bytes.subarray(p, p + count * bpp), o);
+        o += count * bpp;
+        p += count * bpp;
+      }
+    }
+  }
+  const out = new Uint8ClampedArray(n * 4);
+  for (let y = 0; y < height; y++) {
+    const sy = topDown ? y : height - 1 - y;
+    for (let x = 0; x < width; x++) {
+      const sx = rightToLeft ? width - 1 - x : x;
+      const i = (sy * width + sx) * bpp, o = (y * width + x) * 4;
+      if (bpp === 1 || bpp === 2) {
+        out[o] = out[o + 1] = out[o + 2] = px[i];
+        out[o + 3] = bpp === 2 ? px[i + 1] : 255;
+      } else {
+        out[o] = px[i + 2];
+        out[o + 1] = px[i + 1];
+        out[o + 2] = px[i];
+        out[o + 3] = bpp === 4 ? px[i + 3] : 255;
+      }
+    }
+  }
+  return { width, height, data: out };
+}
+
+/** Decode PNG or TGA by file extension. */
+export const decodeImage = (bytes, path = '') => (/\.tga$/i.test(path) ? decodeTga(bytes) : decodePng(bytes));
+export const imageSize = (bytes, path = '') => (/\.tga$/i.test(path) ? tgaSize(bytes) : pngSize(bytes));
+export const canDecode = (path = '') => /\.(png|tga)$/i.test(path);
+
+/**
+ * Emissive textures keep the glow mask in alpha (low alpha = glow). When glow is switched off for a
+ * level the material becomes alpha-test, so make every non-transparent pixel solid (no holes).
+ * @param {boolean} cutout material keeps transparency (…emissive_alpha) → alpha 0 stays transparent
+ */
+export function flattenGlow(img, cutout = true) {
+  const d = new Uint8ClampedArray(img.data);
+  for (let i = 3; i < d.length; i += 4) d[i] = d[i] > 0 || !cutout ? 255 : 0;
+  return { width: img.width, height: img.height, data: d };
+}

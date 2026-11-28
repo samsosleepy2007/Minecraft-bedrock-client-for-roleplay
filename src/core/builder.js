@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import { toJson } from './json.js';
 import { transformPreAnimation, transformAnimate, lodLine, lodLineGraphics } from './molang.js';
 import { reduceGeometryDef, makeGeometryFile, countCubes } from './geometry.js';
-import { decodePng, encodePng, downscale, tint, DEBUG_COLORS } from './texture.js';
+import { decodeImage, canDecode, flattenGlow, encodePng, downscale, tint, DEBUG_COLORS } from './texture.js';
 import { normalizeSettings, settingsFor, thresholds, textureLevels, fancyProfile } from './settings.js';
 import { LICENSE_TEXT } from './license.js';
 import packIconUrl from '../assets/pack_icon.png?inline';
@@ -42,7 +42,7 @@ export function withArmorStand(cond) {
 const safeId = (id) => id.replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
 
 /** Build the replacement render controller. */
-export function buildRenderController(base, { maxLod, hideLod, visCond, hasEnchanted }) {
+export function buildRenderController(base, { maxLod, hideLod, visCond, glowSwitch, hasEnchanted }) {
   const rc = base
     ? structuredClone(base)
     : { materials: [{ '*': 'Material.default' }], textures: ['Texture.default', ...(hasEnchanted ? ['Texture.enchanted'] : [])] };
@@ -56,6 +56,14 @@ export function buildRenderController(base, { maxLod, hideLod, visCond, hasEncha
   if (ti < 0) ti = 0;
   texs[ti] = `Array.tex[${idx}]`;
   rc.textures = texs;
+  if (glowSwitch) {
+    // per-level material: original glow material at level 0, plain material when reduced
+    rc.arrays.materials = { ...(rc.arrays.materials || {}), 'Array.sl_mat': glowSwitch.list };
+    const ref = `Material.${glowSwitch.key}`;
+    rc.materials = (rc.materials || [{ '*': ref }]).map((e) =>
+      Object.fromEntries(Object.entries(e).map(([k, v]) => [k, v === ref ? `Array.sl_mat[${idx}]` : v]))
+    );
+  }
   const cond = visCond || (hideLod != null ? `v.sl_lod < ${hideLod}` : null);
   if (cond) {
     const orig = (rc.part_visibility || []).map((e) =>
@@ -227,24 +235,31 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
   d.textures = { ...(d.textures || {}) };
   const baseTex = d.textures[a.texKey];
   if (a.texKey !== 'default' && baseTex) d.textures.default = baseTex;
-  const canTex = a.texture && a.texture.ext.toLowerCase() === '.png';
+  const canTex = a.texture && canDecode(a.texture.path);
   let img = null;
-  const alphaMode = /blend|translucent/i.test(a.material) ? 'blend' : 'test';
+  // Glow: reduced levels can drop the glow (material → alpha-test, glow pixels made solid)
+  const glowFlat = !!(a.glow && s.glowOff && canTex && s.memoryMode !== 'none');
+  const glowCutout = !!a.glow && /alpha/i.test(a.glow.material);
+  const flatIdx = new Set();
+  const alphaMode = glowFlat ? 'test' : a.glow ? 'emissive' : /blend|translucent/i.test(a.material) ? 'blend' : 'test';
   const texName = (a.texRef || id).split('/').pop();
   const texKey = `${a.slug}|${a.pack?.root}|${a.texture?.path}`;
   for (const { p, offset } of profiles) {
   const levels = textureLevels(p);
   for (let i = 1; i <= p.lodCount; i++) {
-    const r = levels[i - 1];
+    let r = levels[i - 1];
+    if (glowFlat && !r) r = 1; // need our own (solid) copy to switch off the glow
     let ref = baseTex;
     if (r && canTex) {
-      const tag = `${r * 1000}${s.debug ? `_d${i}` : ''}`;
+      const tag = `${r * 1000}${s.debug ? `_d${i}` : ''}${glowFlat ? '_flat' : ''}`;
+      if (glowFlat) flatIdx.add(offset + i);
       const { name, fresh } = sharedName(shared, `tex|${texKey}|${tag}|${alphaMode}`, `textures/sl_lod/${a.slug}/${texName}_lod${i}`);
       ref = name;
       if (fresh) {
-        img = img || shared.images.get(texKey) || decodePng(await a.texture.file.async('uint8array'));
+        img = img || shared.images.get(texKey) || decodeImage(await a.texture.file.async('uint8array'), a.texture.path);
         shared.images.set(texKey, img);
-        let out = r === 1 ? img : downscale(img, r, { alphaMode });
+        const src = glowFlat ? flattenGlow(img, glowCutout) : img;
+        let out = r === 1 ? src : downscale(src, r, { alphaMode });
         if (s.debug) out = tint(out, DEBUG_COLORS[i] || DEBUG_COLORS[DEBUG_COLORS.length - 1]);
         zip.file(`${ref}.png`, encodePng(out));
       }
@@ -270,7 +285,23 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
     };
     const sub = (rel) => rel.replace(/^[^/]+\//, '');
     if (a.geometry?.file) await copy(a.geometry.file, `models/entity/sl_lod/${a.slug}/original/${sub(a.geometry.file)}`);
-    if (a.texture?.path) await copy(a.texture.path, a.texture.path);
+    if (a.texture?.path) {
+      await copy(a.texture.path, a.texture.path);
+      const setPath = a.texture.path.replace(/\.[^./]+$/, '') + '.texture_set.json';
+      if (a.pack.local.has(setPath)) {
+        await copy(setPath, setPath);
+        try {
+          const ts = JSON.parse(await a.pack.local.get(setPath).async('string'))['minecraft:texture_set'] || {};
+          const dir = setPath.slice(0, setPath.lastIndexOf('/') + 1);
+          for (const v of Object.values(ts)) {
+            if (typeof v !== 'string') continue;
+            for (const ext of ['.png', '.tga']) if (a.pack.local.has(dir + v + ext)) await copy(dir + v + ext, dir + v + ext);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    }
     for (const animId of Object.values(d.animations || {})) {
       const f = a.pack.animations?.get(animId);
       if (f) await copy(f, `animations/sl_lod/${a.slug}/${sub(f)}`);
@@ -286,7 +317,13 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
   if (firstName && !base && firstName !== 'controller.render.armor' && firstName !== 'controller.render.default') {
     info.warnings.push(`render controller ${firstName} not in pack; generated a default one`);
   }
-  const rc = buildRenderController(base, { maxLod, visCond, hasEnchanted: !!d.textures.enchanted });
+  let glowSwitch = null;
+  if (flatIdx.size) {
+    d.materials = { ...(d.materials || {}), sl_flat: glowCutout ? 'entity_alphatest' : 'entity' };
+    glowSwitch = { key: a.glow.key, list: Array.from({ length: maxLod + 1 }, (_, i) => (flatIdx.has(i) ? 'Material.sl_flat' : `Material.${a.glow.key}`)) };
+    info.glow = 'off when reduced';
+  }
+  const rc = buildRenderController(base, { maxLod, visCond, glowSwitch, hasEnchanted: !!d.textures.enchanted });
   if (!rcBySlug.has(a.slug)) rcBySlug.set(a.slug, {});
   rcBySlug.get(a.slug)[rcName] = rc;
   const newEntry = typeof first === 'object' && first ? { [rcName]: Object.values(first)[0] } : rcName;

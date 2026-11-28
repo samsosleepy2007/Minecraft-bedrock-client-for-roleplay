@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
 import {
   parseBedrockJson, transformPreAnimation, transformAnimate, bracesBalanced, lodLine,
-  reduceGeometryDef, countCubes, downscale, decodePng, pngSize, scanAddon, findDuplicates,
+  reduceGeometryDef, countCubes, downscale, decodePng, pngSize, decodeTga, tgaSize, flattenGlow, scanAddon, findDuplicates,
   buildPack, normalizeSettings, slugify, gateExpr, PRESETS, estimateExtraMB, textureLevels, withArmorStand, validateSettings,
 } from '../src/core/index.js';
 import { makeSampleAddon, makeDuplicateAddon, makeNoArmorAddon, makeTexture, HAIR_GEO } from './fixtures/sampleAddon.js';
@@ -125,6 +125,24 @@ describe('texture', () => {
     const ba = new Set();
     for (let i = 3; i < blend.data.length; i += 4) ba.add(blend.data[i]);
     expect([...ba].some((a) => a !== 0 && a !== 255)).toBe(true);
+  });
+  it('decodes TGA (uncompressed + RLE, bottom-up)', () => {
+    // 2x2: bottom row first. pixels BGRA
+    const head = (type) => Uint8Array.from([0, 0, type, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 32, 8]);
+    const raw = [0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 255, 255, 255, 10]; // bottom: red, green; top: blue, white(a=10)
+    const t1 = new Uint8Array([...head(2), ...raw]);
+    const img = decodeTga(t1);
+    expect([img.width, img.height]).toEqual([2, 2]);
+    expect([...img.data.slice(0, 4)]).toEqual([0, 0, 255, 255]); // top-left = blue
+    expect([...img.data.slice(4, 8)]).toEqual([255, 255, 255, 10]); // top-right = white a10
+    expect([...img.data.slice(8, 12)]).toEqual([255, 0, 0, 255]); // bottom-left = red
+    const rle = new Uint8Array([...head(10), 0x81, 0, 0, 255, 255, 0x01, 255, 0, 0, 255, 255, 255, 255, 10]);
+    expect([...decodeTga(rle).data.slice(8, 12)]).toEqual([255, 0, 0, 255]); // bottom-left red
+    expect(tgaSize(t1)).toEqual({ width: 2, height: 2 });
+  });
+  it('flattenGlow makes glow pixels solid, keeps transparency', () => {
+    const f = flattenGlow({ width: 3, height: 1, data: Uint8ClampedArray.from([1, 1, 1, 0, 2, 2, 2, 10, 3, 3, 3, 255]) });
+    expect([f.data[3], f.data[7], f.data[11]]).toEqual([0, 255, 255]);
   });
   it('pngSize reads header', () => {
     expect(pngSize(makeTexture(64))).toEqual({ width: 64, height: 64 });
@@ -277,6 +295,21 @@ describe('scan + build (fixture)', () => {
     const att0 = JSON.parse(await (await JSZip.loadAsync(res0.bytes)).file('attachables/sleepy_hair_helmet.json').async('string'))['minecraft:attachable'].description;
     expect(att0.scripts.pre_animation[1]).toContain('v.sl_lf = 0;');
     expect(Object.keys(att0.textures)).toEqual(['default', 'enchanted', 'lod1', 'lod2', 'lod3']);
+  });
+
+  it('glow: reduced levels switch to a plain material with solid texture', async () => {
+    const a = await scanAddon('S.mcaddon', await makeSampleAddon());
+    const hair = { ...a.armors.find((x) => x.identifier === 'sleepy:hair_helmet'), glow: { key: 'default', material: 'entity_emissive_alpha' } };
+    const res = await buildPack([hair], { settings: settings() });
+    const z = await JSZip.loadAsync(res.bytes);
+    const att = JSON.parse(await z.file('attachables/sleepy_hair_helmet.json').async('string'))['minecraft:attachable'].description;
+    expect(att.materials.sl_flat).toBe('entity_alphatest');
+    const rc = JSON.parse(await z.file('render_controllers/sl_lod/s.render_controllers.json').async('string')).render_controllers['controller.render.sleepy_hair_helmet_lod'];
+    expect(rc.arrays.materials['Array.sl_mat']).toEqual(['Material.default', 'Material.sl_flat', 'Material.sl_flat', 'Material.sl_flat']);
+    expect(rc.materials).toEqual([{ '*': 'Array.sl_mat[math.min(v.sl_lod, 3)]' }]);
+    const off = await buildPack([hair], { settings: settings({ glowOff: false }) });
+    const rc2 = JSON.parse(await (await JSZip.loadAsync(off.bytes)).file('render_controllers/sl_lod/s.render_controllers.json').async('string')).render_controllers['controller.render.sleepy_hair_helmet_lod'];
+    expect(rc2.arrays.materials).toBeUndefined();
   });
 
   it('pack state: keeps UUID and bumps version on rebuild; debug name', async () => {
