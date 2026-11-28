@@ -97,6 +97,7 @@ async function indexPack(files, root, warnings) {
   const attachables = new Map();
   const geometries = new Map();
   const controllers = new Map();
+  const animations = new Map(); // animation id → file path (for a self-contained pack)
   const readJson = async (rel) => parseBedrockJson(await local.get(rel).async('string'));
   for (const rel of local.keys()) {
     if (!/\.json$/i.test(rel)) continue;
@@ -107,6 +108,9 @@ async function indexPack(files, root, warnings) {
       } else if (/^models\//i.test(rel) || /\.geo\.json$/i.test(rel)) {
         const j = await readJson(rel);
         for (const g of listGeometries(j)) geometries.set(g.id, { ...g, file: rel });
+      } else if (/^animations\//i.test(rel)) {
+        const j = await readJson(rel);
+        for (const id of Object.keys(j.animations || {})) animations.set(id, rel);
       } else if (/^render_controllers\//i.test(rel)) {
         const j = await readJson(rel);
         for (const [n, d] of Object.entries(j.render_controllers || {})) controllers.set(n, d);
@@ -123,7 +127,7 @@ async function indexPack(files, root, warnings) {
     }
     return null;
   };
-  return { root, local, attachables, geometries, controllers, findTexture };
+  return { root, local, attachables, geometries, controllers, animations, findTexture };
 }
 
 const ARMOR_HINT = /armor|helmet|chest|legging|boot|hair|head/i;

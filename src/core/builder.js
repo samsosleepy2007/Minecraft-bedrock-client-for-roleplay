@@ -234,6 +234,28 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
     d.textures[`lod${i}`] = ref;
   }
 
+  // Self-contained: copy the original geometry, texture and animation files at their original paths.
+  // Then the pack works even when the original add-on is lower in the stack or only in a world
+  // (no "geometry not found"); identical paths/ids mean no extra memory when both are loaded.
+  if (a.pack?.local) {
+    // geometry/animations are found by identifier → own folder per add-on (no path clashes);
+    // the texture is referenced by path → same path as the original
+    const copy = async (rel, out) => {
+      if (!rel || !a.pack.local.has(rel)) return;
+      const key = `${a.slug}|${a.pack.root}|${rel}`;
+      if ((shared.copied ||= new Set()).has(key)) return;
+      shared.copied.add(key);
+      zip.file(out, await a.pack.local.get(rel).async('uint8array'));
+    };
+    const sub = (rel) => rel.replace(/^[^/]+\//, '');
+    if (a.geometry?.file) await copy(a.geometry.file, `models/entity/sl_lod/${a.slug}/original/${sub(a.geometry.file)}`);
+    if (a.texture?.path) await copy(a.texture.path, a.texture.path);
+    for (const animId of Object.values(d.animations || {})) {
+      const f = a.pack.animations?.get(animId);
+      if (f) await copy(f, `animations/sl_lod/${a.slug}/${sub(f)}`);
+    }
+  }
+
   // render controller
   const rcName = `controller.render.${id}_lod`;
   const rcs = d.render_controllers || [];

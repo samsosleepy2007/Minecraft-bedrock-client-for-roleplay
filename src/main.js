@@ -412,7 +412,7 @@ function render() {
 
   <details id="how" class="card how" ${state.howOpen ? 'open' : ''}>
     <summary>${t('howto')}${ICON.chev}</summary>
-    <ol><li>${t('android')}</li><li>${t('ios')}</li><li>${t('after')}</li><li>${t('debugHelp')}</li></ol>
+    <ol><li>${t('android')}</li><li>${t('ios')}</li><li>${t('after')}</li><li>${t('afterWorld')}</li><li>${t('afterServer')}</li><li>${t('debugHelp')}</li></ol>
   </details>
 
   <footer>© 2026 SamSoSleepy · SleepyShop · GPL-3.0 · <a href="https://github.com/samsosleepy2007/Minecraft-bedrock-client-for-roleplay" target="_blank" rel="noopener">${t('source')}</a></footer>

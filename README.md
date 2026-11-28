@@ -16,7 +16,11 @@
 5. Import เข้าเกม
    - **Android:** แตะไฟล์ที่ดาวน์โหลด → เปิดด้วย Minecraft
    - **iOS:** กด "ส่งเข้า Minecraft" → เลือก Minecraft (หรือแอป Files → Share → Minecraft)
-6. ในเกม: Settings → Global Resources → เปิด SleepyArmor Lite และวางไว้ **เหนือ** แอดออนต้นฉบับ (แอดออนต้นฉบับต้องติดตั้งอยู่)
+6. วาง pack ให้อยู่ **เหนือ** แอดออนเกราะ ในที่เดียวกับที่แอดออนติดตั้งอยู่:
+   - แอดออนอยู่ใน **Global Resources** → เปิด SleepyArmor Lite ใน Global Resources แล้ววางไว้เหนือแอดออน
+   - แอดออนอยู่ใน **โลก** (Resource Packs ของโลก) → pack ของโลกจะทับ Global Resources ต้องแก้ไขโลก → Resource Packs → เพิ่ม SleepyArmor Lite ไว้เหนือแอดออน
+   - **เซิร์ฟเวอร์** ที่ส่งแอดออนให้อัตโนมัติ → pack ของเซิร์ฟอยู่เหนือ pack ในเครื่อง จึงอาจไม่มีผล ต้องให้เจ้าของเซิร์ฟใส่ pack นี้
+   - pack นี้มีโมเดล/texture/animation ต้นฉบับในตัว จึงไม่ขึ้น `geometry not found` แม้แอดออนต้นฉบับอยู่คนละที่
 
 สร้างใหม่ซ้ำได้ — pack จะเป็นเวอร์ชันใหม่ของ pack เดิม (UUID เดิม, version เพิ่มขึ้น)
 

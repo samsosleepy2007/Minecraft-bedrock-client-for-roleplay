@@ -229,8 +229,8 @@ describe('scan + build (fixture)', () => {
     const hair = a.armors.find((x) => x.identifier === 'sleepy:hair_helmet');
     const twin = { ...hair, identifier: 'sleepy:hair_chest', key: 's::sleepy:hair_chest', attachablePath: 'attachables/hair_chest.json' };
     const res = await buildPack([hair, twin], { settings: settings() });
-    const pngs = res.files.filter((f) => f.startsWith('textures/'));
-    const geos = res.files.filter((f) => f.endsWith('.geo.json'));
+    const pngs = res.files.filter((f) => f.startsWith('textures/sl_lod/'));
+    const geos = res.files.filter((f) => f.startsWith('models/entity/sl_lod/') && !f.includes('/original/'));
     expect(pngs).toHaveLength(3); // one per LOD level, not per piece
     expect(geos).toHaveLength(1);
     const z = await JSZip.loadAsync(res.bytes);
@@ -257,7 +257,9 @@ describe('scan + build (fixture)', () => {
     const a = await scanAddon('S.mcaddon', await makeSampleAddon());
     const hair = a.armors.find((x) => x.identifier === 'sleepy:hair_helmet');
     const res = await buildPack(a.armors, { settings: settings({ memoryMode: 'none' }), overrides: { [hair.key]: { lodCount: 1, hide: { enabled: false } } } });
-    expect(res.files.filter((f) => f.endsWith('.png'))).toEqual(['pack_icon.png']);
+    expect(res.files.filter((f) => f.startsWith('textures/sl_lod/'))).toEqual([]);
+    // self-contained: original geometry + textures copied at their original paths
+    expect(res.files).toEqual(expect.arrayContaining(['models/entity/sl_lod/s/original/entity/hair.geo.json', 'models/entity/sl_lod/s/original/entity/chest.geo.json', 'textures/models/armor/hair.png', 'textures/models/armor/plate.png']));
     const z = await JSZip.loadAsync(res.bytes);
     const att = JSON.parse(await z.file('attachables/sleepy_hair_helmet.json').async('string'))['minecraft:attachable'].description;
     expect(att.textures.lod1).toBe(att.textures.default);
