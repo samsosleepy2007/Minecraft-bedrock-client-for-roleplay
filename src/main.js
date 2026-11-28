@@ -509,5 +509,9 @@ app.addEventListener('click', (e) => {
   render();
 });
 
+// a chosen preset always uses its current definition (old saved values may be outdated)
+if (PRESETS[state.preset]) {
+  state.settings = normalizeSettings({ ...structuredClone(PRESETS[state.preset]), debug: state.settings.debug, armorStand: state.settings.armorStand });
+}
 document.documentElement.lang = state.lang;
 render();

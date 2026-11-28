@@ -31,7 +31,7 @@ export const PRESETS = {
     levels: [L(8, 1), L(16, 0.25, 1, true), L(32, 0.125, 2, true), L(48, 0.125, 3, true), L(64, 0.125, 3, true)],
     physicsOffFrom: 1,
     hide: { enabled: true, distance: 48 },
-    memoryMode: 'minimal',
+    memoryMode: 'full',
     armorStand: true,
     debug: false,
   },

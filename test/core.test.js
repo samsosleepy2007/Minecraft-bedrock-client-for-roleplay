@@ -122,6 +122,9 @@ describe('settings', () => {
   it('presets normalise and validate', () => {
     for (const p of Object.values(PRESETS)) expect(validateSettings(normalizeSettings(p))).toEqual([]);
   });
+  it('saver preset reduces every level like the design (25% → 12.5% → 12.5%)', () => {
+    expect(textureLevels(normalizeSettings(PRESETS.saver))).toEqual([0.25, 0.125, 0.125]);
+  });
   it('detects bad distance order', () => {
     const s = settings({ levels: [{ distance: 20 }, { distance: 10 }] });
     expect(validateSettings(s).length).toBeGreaterThan(0);
