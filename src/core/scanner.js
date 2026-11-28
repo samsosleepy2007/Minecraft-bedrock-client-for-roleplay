@@ -13,7 +13,7 @@ export function slugify(name) {
   const s = String(name)
     .replace(/\.(mcaddon|mcpack|zip)$/i, '')
     .normalize('NFKD')
-    .replace(/[^\w-]+/g, '_')
+    .replace(/[^a-zA-Z0-9_]+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '')
     .toLowerCase();

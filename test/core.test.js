@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 import {
   parseBedrockJson, transformPreAnimation, transformAnimate, bracesBalanced, lodLine,
   reduceGeometryDef, countCubes, downscale, decodePng, pngSize, scanAddon, findDuplicates,
-  buildPack, normalizeSettings, PRESETS, estimateExtraMB, textureLevels, withArmorStand, validateSettings,
+  buildPack, normalizeSettings, slugify, PRESETS, estimateExtraMB, textureLevels, withArmorStand, validateSettings,
 } from '../src/core/index.js';
 import { makeSampleAddon, makeDuplicateAddon, makeNoArmorAddon, makeTexture, HAIR_GEO } from './fixtures/sampleAddon.js';
 
@@ -55,6 +55,11 @@ describe('pre_animation transform', () => {
   it('lodLine yields level count', () => {
     expect(lodLine([8])).toBe('v.sl_d = q.distance_from_camera; v.sl_lod = v.sl_d < 8.0 ? 0 : (1);');
   });
+  it('viewer gate wraps the LOD expression', () => {
+    const l = lodLine([8], 'q.client_max_render_distance <= 8');
+    expect(l).toBe('v.sl_d = q.distance_from_camera; v.sl_lod = (q.client_max_render_distance <= 8) ? (v.sl_d < 8.0 ? 0 : (1)) : 0;');
+    expect(bracesBalanced(l)).toBe(true);
+  });
   it('bracesBalanced detects problems', () => {
     expect(bracesBalanced('a ? { b; };')).toBe(true);
     expect(bracesBalanced('a ? { b;')).toBe(false);
@@ -68,6 +73,12 @@ describe('pre_animation transform', () => {
 describe('armor stand condition', () => {
   it('player-only → exact spec string', () => {
     expect(withArmorStand("query.owner_identifier == 'minecraft:player'")).toBe("q.owner_identifier == 'minecraft:player' || q.owner_identifier == 'minecraft:armor_stand'");
+  });
+  it('player check without spaces is recognised', () => {
+    expect(withArmorStand("query.owner_identifier=='minecraft:player'")).toBe("q.owner_identifier == 'minecraft:player' || q.owner_identifier == 'minecraft:armor_stand'");
+  });
+  it('addon slug is a safe identifier part', () => {
+    expect(slugify('30b2001d-furaychi_1.0.8_Updated Base.mcaddon')).toBe('30b2001d_furaychi_1_0_8_updated_base');
   });
   it('keeps other conditions via OR', () => {
     expect(withArmorStand('q.is_baby')).toBe("(q.is_baby) || q.owner_identifier == 'minecraft:armor_stand'");

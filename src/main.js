@@ -312,6 +312,9 @@ function simpleControls(s) {
         <span class="slt"><span class="rail"></span><span class="fill" style="width:${pct(o, v)}"></span><span class="thumb" style="left:${pct(o, v)}"></span>
         <input type="range" min="${o.min}" max="${o.max}" value="${v}" data-slider="${o.k}" aria-label="${t('sl_' + o.k)}"></span></label>`;
     }).join('')}
+    <label class="fld">${t('gate')} <select data-f="gate">${['all', 'render', 'graphics', 'memory'].map((g) => opt(g, t('gate_' + g), s.gate)).join('')}</select></label>
+    ${s.gate === 'render' ? `<label class="fld">${t('gateRender')} <input type="number" min="2" max="96" data-f="gateRender" value="${s.gateRender}"></label>` : ''}
+    ${s.gate !== 'all' ? `<p class="hint">${t('gateHelp_' + s.gate)}</p>` : ''}
     <label class="tgl">${t('physFar')}<input type="checkbox" class="ck" data-phys ${physOn ? 'checked' : ''}></label>
     <label class="tgl">${t('debugShort')}<input type="checkbox" class="ck" data-f="debug" ${s.debug ? 'checked' : ''}></label>
   </div>`;
@@ -443,12 +446,12 @@ app.addEventListener('change', (e) => {
   } else if (el.dataset.f) {
     const path = el.closest('[data-path]').dataset.path;
     const target = path === 'g' ? state.settings : (state.overrides[path] = normalizeSettings({ ...state.settings, ...state.overrides[path] }));
-    const v = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' && el.dataset.f === 'memoryMode' ? el.value : Number(el.value);
+    const v = el.type === 'checkbox' ? el.checked : el.tagName === 'SELECT' && (el.dataset.f === 'memoryMode' || el.dataset.f === 'gate') ? el.value : Number(el.value);
     setField(target, el.dataset.f, v);
     const n = normalizeSettings(target);
     if (path === 'g') {
       state.settings = n;
-      if (!['memoryMode', 'armorStand', 'debug'].includes(el.dataset.f)) state.preset = null;
+      if (!['memoryMode', 'armorStand', 'debug', 'gate', 'gateRender'].includes(el.dataset.f)) state.preset = null;
     }
     else state.overrides[path] = n;
   } else return;
@@ -495,7 +498,7 @@ app.addEventListener('click', (e) => {
     store.set('lang', state.lang);
     document.documentElement.lang = state.lang;
   } else if (el.dataset.preset) {
-    const keep = { debug: state.settings.debug, armorStand: state.settings.armorStand };
+    const keep = { debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, gateRender: state.settings.gateRender };
     state.settings = normalizeSettings({ ...structuredClone(PRESETS[el.dataset.preset]), ...keep });
     state.preset = el.dataset.preset;
     state.sliders = { ...PRESET_SLIDERS[state.preset] };
@@ -511,7 +514,7 @@ app.addEventListener('click', (e) => {
 
 // a chosen preset always uses its current definition (old saved values may be outdated)
 if (PRESETS[state.preset]) {
-  state.settings = normalizeSettings({ ...structuredClone(PRESETS[state.preset]), debug: state.settings.debug, armorStand: state.settings.armorStand });
+  state.settings = normalizeSettings({ ...structuredClone(PRESETS[state.preset]), debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, gateRender: state.settings.gateRender });
 }
 document.documentElement.lang = state.lang;
 render();

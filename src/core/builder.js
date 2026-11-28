@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-only — free software, see LICENSE. */
 import JSZip from 'jszip';
 import { toJson } from './json.js';
-import { transformPreAnimation, transformAnimate } from './molang.js';
+import { transformPreAnimation, transformAnimate, gateExpr } from './molang.js';
 import { reduceGeometryDef, makeGeometryFile, countCubes } from './geometry.js';
 import { decodePng, encodePng, downscale, tint, DEBUG_COLORS } from './texture.js';
 import { normalizeSettings, settingsFor, thresholds, textureLevels } from './settings.js';
@@ -34,8 +34,8 @@ export const uuid = () =>
 export function withArmorStand(cond) {
   const c = typeof cond === 'string' ? cond.trim() : '';
   if (/armor_stand/.test(c)) return c;
-  const norm = c.replace(/\bquery\./g, 'q.').replace(/\s+/g, ' ').replace(/"/g, "'");
-  if (!c || norm === PLAYER) return `${PLAYER} || ${STAND}`;
+  const squash = (x) => x.replace(/\bquery\./g, 'q.').replace(/\s+/g, '').replace(/"/g, "'");
+  if (!c || squash(c) === squash(PLAYER)) return `${PLAYER} || ${STAND}`;
   return `(${c}) || ${STAND}`;
 }
 
@@ -132,6 +132,7 @@ export function makeManifest(s, packState, count) {
     `§aLOD §f${t} §7blocks${hide} §8| §f${count} §7armor`,
     `§eFree & open source §7(GPL-3.0) §8- §7keep the SleepyShop credit; modified versions must stay GPL-3.0.`,
     `§7Armor models/textures belong to their original creators. Personal use; keep the original add-on installed and put this pack §fABOVE§7 it.`,
+    ...(s.gate && s.gate !== 'all' ? [`§bOn only when: §f${{ render: `render distance <= ${s.gateRender}`, graphics: 'Simple graphics', memory: 'low-RAM device' }[s.gate]}`] : []),
     ...(s.debug ? ['§c§lDEBUG§r§c: colours show LOD levels (1 blue, 2 red, 3 green, 4 yellow)'] : []),
   ].join('\n');
   return {
@@ -177,7 +178,7 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
 
   // scripts
   d.scripts = d.scripts || {};
-  d.scripts.pre_animation = transformPreAnimation(d.scripts.pre_animation || [], t, physMax);
+  d.scripts.pre_animation = transformPreAnimation(d.scripts.pre_animation || [], t, physMax, gateExpr(s.gate, s.gateRender));
   if (d.scripts.animate) d.scripts.animate = transformAnimate(d.scripts.animate, physMax, t.length);
 
   // geometry LODs

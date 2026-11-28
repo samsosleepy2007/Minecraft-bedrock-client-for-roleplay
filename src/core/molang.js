@@ -33,13 +33,26 @@ const endStmt = (s) => {
  * @param {number[]} thresholds distance (blocks) where each level ends; length = number of levels-1
  *   e.g. [8,16,32] → lods 0..3. A final hide threshold may be appended by the caller.
  */
-export function lodLine(thresholds) {
+/**
+ * Viewer-side switch: LOD is only used when this Molang condition is true on the VIEWER's device,
+ * so each player can turn it on/off with their own game settings. (Queries must be confirmed in game.)
+ */
+export const GATES = {
+  all: null,
+  render: (n) => `q.client_max_render_distance <= ${n}`,
+  graphics: () => "q.graphics_mode_is_any('simple')",
+  memory: () => 'q.client_memory_tier <= 1',
+};
+export const gateExpr = (gate, renderMax = 8) => (GATES[gate] ? GATES[gate](renderMax) : null);
+
+export function lodLine(thresholds, gate = null) {
   let expr = String(thresholds.length);
   for (let i = thresholds.length - 1; i >= 0; i--) {
     const d = fmt(thresholds[i]);
     expr = i === 0 ? `v.sl_d < ${d} ? 0 : (${expr})` : `(v.sl_d < ${d} ? ${i} : (${expr}))`;
   }
   // flatten outer redundant parens of first-level form
+  if (gate) expr = `(${gate}) ? (${expr}) : 0`;
   return `v.sl_d = q.distance_from_camera; v.sl_lod = ${expr};`;
 }
 
@@ -52,7 +65,7 @@ const fmt = (n) => (Number.isInteger(n) ? `${n}.0` : String(n));
  * @param {number} physicsMaxLod physics/pre_animation runs while v.sl_lod <= this
  * @returns {string[]}
  */
-export function transformPreAnimation(lines, thresholds, physicsMaxLod) {
+export function transformPreAnimation(lines, thresholds, physicsMaxLod, gate = null) {
   const src = (lines || []).filter((l) => typeof l === 'string' && l.trim());
   const out = [];
   let rest = src;
@@ -60,7 +73,7 @@ export function transformPreAnimation(lines, thresholds, physicsMaxLod) {
     out.push(src[0]);
     rest = src.slice(1);
   }
-  out.push(lodLine(thresholds));
+  out.push(lodLine(thresholds, gate));
   if (rest.length) {
     const maxLod = thresholds.length;
     if (physicsMaxLod >= maxLod) {
