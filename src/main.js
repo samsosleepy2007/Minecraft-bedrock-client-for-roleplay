@@ -312,8 +312,7 @@ function simpleControls(s) {
         <span class="slt"><span class="rail"></span><span class="fill" style="width:${pct(o, v)}"></span><span class="thumb" style="left:${pct(o, v)}"></span>
         <input type="range" min="${o.min}" max="${o.max}" value="${v}" data-slider="${o.k}" aria-label="${t('sl_' + o.k)}"></span></label>`;
     }).join('')}
-    <label class="fld">${t('gate')} <select data-f="gate">${['all', 'render', 'graphics', 'memory'].map((g) => opt(g, t('gate_' + g), s.gate)).join('')}</select></label>
-    ${s.gate === 'render' ? `<label class="fld">${t('gateRender')} <input type="number" min="2" max="96" data-f="gateRender" value="${s.gateRender}"></label>` : ''}
+    <label class="fld">${t('gate')} <select data-f="gate">${['all', 'graphics'].map((g) => opt(g, t('gate_' + g), s.gate)).join('')}</select></label>
     ${s.gate !== 'all' ? `<p class="hint">${t('gateHelp_' + s.gate)}</p>` : ''}
     <label class="tgl">${t('physFar')}<input type="checkbox" class="ck" data-phys ${physOn ? 'checked' : ''}></label>
     <label class="tgl">${t('debugShort')}<input type="checkbox" class="ck" data-f="debug" ${s.debug ? 'checked' : ''}></label>
@@ -451,7 +450,7 @@ app.addEventListener('change', (e) => {
     const n = normalizeSettings(target);
     if (path === 'g') {
       state.settings = n;
-      if (!['memoryMode', 'armorStand', 'debug', 'gate', 'gateRender'].includes(el.dataset.f)) state.preset = null;
+      if (!['memoryMode', 'armorStand', 'debug', 'gate'].includes(el.dataset.f)) state.preset = null;
     }
     else state.overrides[path] = n;
   } else return;
@@ -498,7 +497,7 @@ app.addEventListener('click', (e) => {
     store.set('lang', state.lang);
     document.documentElement.lang = state.lang;
   } else if (el.dataset.preset) {
-    const keep = { debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, gateRender: state.settings.gateRender };
+    const keep = { debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate };
     state.settings = normalizeSettings({ ...structuredClone(PRESETS[el.dataset.preset]), ...keep });
     state.preset = el.dataset.preset;
     state.sliders = { ...PRESET_SLIDERS[state.preset] };
@@ -514,7 +513,7 @@ app.addEventListener('click', (e) => {
 
 // a chosen preset always uses its current definition (old saved values may be outdated)
 if (PRESETS[state.preset]) {
-  state.settings = normalizeSettings({ ...structuredClone(PRESETS[state.preset]), debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, gateRender: state.settings.gateRender });
+  state.settings = normalizeSettings({ ...structuredClone(PRESETS[state.preset]), debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate });
 }
 document.documentElement.lang = state.lang;
 render();

@@ -5,7 +5,7 @@ import JSZip from 'jszip';
 import {
   parseBedrockJson, transformPreAnimation, transformAnimate, bracesBalanced, lodLine,
   reduceGeometryDef, countCubes, downscale, decodePng, pngSize, scanAddon, findDuplicates,
-  buildPack, normalizeSettings, slugify, PRESETS, estimateExtraMB, textureLevels, withArmorStand, validateSettings,
+  buildPack, normalizeSettings, slugify, gateExpr, PRESETS, estimateExtraMB, textureLevels, withArmorStand, validateSettings,
 } from '../src/core/index.js';
 import { makeSampleAddon, makeDuplicateAddon, makeNoArmorAddon, makeTexture, HAIR_GEO } from './fixtures/sampleAddon.js';
 
@@ -56,8 +56,10 @@ describe('pre_animation transform', () => {
     expect(lodLine([8])).toBe('v.sl_d = q.distance_from_camera; v.sl_lod = v.sl_d < 8.0 ? 0 : (1);');
   });
   it('viewer gate wraps the LOD expression', () => {
-    const l = lodLine([8], 'q.client_max_render_distance <= 8');
-    expect(l).toBe('v.sl_d = q.distance_from_camera; v.sl_lod = (q.client_max_render_distance <= 8) ? (v.sl_d < 8.0 ? 0 : (1)) : 0;');
+    const l = lodLine([8], gateExpr('graphics'));
+    expect(l).toBe("v.sl_d = q.distance_from_camera; v.sl_lod = (q.graphics_mode_is_any('simple')) ? (v.sl_d < 8.0 ? 0 : (1)) : 0;");
+    expect(gateExpr('all')).toBe(null);
+    expect(normalizeSettings({ gate: 'render' }).gate).toBe('all');
     expect(bracesBalanced(l)).toBe(true);
   });
   it('bracesBalanced detects problems', () => {

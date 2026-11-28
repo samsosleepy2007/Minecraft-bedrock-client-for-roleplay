@@ -132,7 +132,7 @@ export function makeManifest(s, packState, count) {
     `§aLOD §f${t} §7blocks${hide} §8| §f${count} §7armor`,
     `§eFree & open source §7(GPL-3.0) §8- §7keep the SleepyShop credit; modified versions must stay GPL-3.0.`,
     `§7Armor models/textures belong to their original creators. Personal use; keep the original add-on installed and put this pack §fABOVE§7 it.`,
-    ...(s.gate && s.gate !== 'all' ? [`§bOn only when: §f${{ render: `render distance <= ${s.gateRender}`, graphics: 'Simple graphics', memory: 'low-RAM device' }[s.gate]}`] : []),
+    ...(s.gate === 'graphics' ? ['§bOn only for players using §fSimple§b graphics (Fancy = full quality)'] : []),
     ...(s.debug ? ['§c§lDEBUG§r§c: colours show LOD levels (1 blue, 2 red, 3 green, 4 yellow)'] : []),
   ].join('\n');
   return {
@@ -178,7 +178,7 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
 
   // scripts
   d.scripts = d.scripts || {};
-  d.scripts.pre_animation = transformPreAnimation(d.scripts.pre_animation || [], t, physMax, gateExpr(s.gate, s.gateRender));
+  d.scripts.pre_animation = transformPreAnimation(d.scripts.pre_animation || [], t, physMax, gateExpr(s.gate));
   if (d.scripts.animate) d.scripts.animate = transformAnimate(d.scripts.animate, physMax, t.length);
 
   // geometry LODs

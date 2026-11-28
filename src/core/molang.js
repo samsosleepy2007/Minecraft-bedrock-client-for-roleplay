@@ -37,13 +37,13 @@ const endStmt = (s) => {
  * Viewer-side switch: LOD is only used when this Molang condition is true on the VIEWER's device,
  * so each player can turn it on/off with their own game settings. (Queries must be confirmed in game.)
  */
+// Confirmed in game: q.graphics_mode_is_any works in attachables.
+// (q.client_max_render_distance and q.client_memory_tier did NOT react in attachables — removed.)
 export const GATES = {
   all: null,
-  render: (n) => `q.client_max_render_distance <= ${n}`,
-  graphics: () => "q.graphics_mode_is_any('simple')",
-  memory: () => 'q.client_memory_tier <= 1',
+  graphics: "q.graphics_mode_is_any('simple')",
 };
-export const gateExpr = (gate, renderMax = 8) => (GATES[gate] ? GATES[gate](renderMax) : null);
+export const gateExpr = (gate) => GATES[gate] || null;
 
 export function lodLine(thresholds, gate = null) {
   let expr = String(thresholds.length);

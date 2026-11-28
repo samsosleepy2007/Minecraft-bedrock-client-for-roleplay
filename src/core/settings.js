@@ -78,8 +78,8 @@ export function normalizeSettings(s) {
   o.memoryMode = ['full', 'minimal', 'none'].includes(o.memoryMode) ? o.memoryMode : 'full';
   o.armorStand = o.armorStand !== false;
   o.debug = !!o.debug;
-  o.gate = ['all', 'render', 'graphics', 'memory'].includes(o.gate) ? o.gate : 'all';
-  o.gateRender = Math.min(96, Math.max(2, Math.round(Number(o.gateRender) || 8)));
+  o.gate = o.gate === 'graphics' ? 'graphics' : 'all';
+  delete o.gateRender;
   return o;
 }
 
