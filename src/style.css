@@ -148,3 +148,4 @@ code { font-size: 12px; }
 .opt span { display: flex; flex-direction: column; gap: 2px; }
 .opt b { font-size: 14px; font-weight: 600; }
 .opt small { font-size: 12px; color: var(--muted); }
+.form.fancy { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 6px; }

@@ -2,10 +2,10 @@
  * SPDX-License-Identifier: GPL-3.0-only — free software, see LICENSE. */
 import JSZip from 'jszip';
 import { toJson } from './json.js';
-import { transformPreAnimation, transformAnimate, gateExpr } from './molang.js';
+import { transformPreAnimation, transformAnimate, lodLine, lodLineGraphics } from './molang.js';
 import { reduceGeometryDef, makeGeometryFile, countCubes } from './geometry.js';
 import { decodePng, encodePng, downscale, tint, DEBUG_COLORS } from './texture.js';
-import { normalizeSettings, settingsFor, thresholds, textureLevels } from './settings.js';
+import { normalizeSettings, settingsFor, thresholds, textureLevels, fancyProfile } from './settings.js';
 import { LICENSE_TEXT } from './license.js';
 import packIconUrl from '../assets/pack_icon.png?inline';
 
@@ -42,7 +42,7 @@ export function withArmorStand(cond) {
 const safeId = (id) => id.replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
 
 /** Build the replacement render controller. */
-export function buildRenderController(base, { maxLod, hideLod, hasEnchanted }) {
+export function buildRenderController(base, { maxLod, hideLod, visCond, hasEnchanted }) {
   const rc = base
     ? structuredClone(base)
     : { materials: [{ '*': 'Material.default' }], textures: ['Texture.default', ...(hasEnchanted ? ['Texture.enchanted'] : [])] };
@@ -56,8 +56,8 @@ export function buildRenderController(base, { maxLod, hideLod, hasEnchanted }) {
   if (ti < 0) ti = 0;
   texs[ti] = `Array.tex[${idx}]`;
   rc.textures = texs;
-  if (hideLod != null) {
-    const cond = `v.sl_lod < ${hideLod}`;
+  const cond = visCond || (hideLod != null ? `v.sl_lod < ${hideLod}` : null);
+  if (cond) {
     const orig = (rc.part_visibility || []).map((e) =>
       Object.fromEntries(Object.entries(e).map(([k, v]) => [k, typeof v === 'string' ? `(${v}) && ${cond}` : v === false ? false : cond]))
     );
@@ -132,7 +132,9 @@ export function makeManifest(s, packState, count) {
     `§aLOD §f${t} §7blocks${hide} §8| §f${count} §7armor`,
     `§eFree & open source §7(GPL-3.0) §8- §7keep the SleepyShop credit; modified versions must stay GPL-3.0.`,
     `§7Armor models/textures belong to their original creators. Personal use; keep the original add-on installed and put this pack §fABOVE§7 it.`,
-    ...(s.gate === 'graphics' ? ['§bOn only for players using §fSimple§b graphics (Fancy = full quality)'] : []),
+    ...(s.gate === 'graphics'
+      ? [`§bSimple graphics§7: LOD above · §bFancy§7: ${s.fancy.lodCount ? `LOD §f${thresholds(fancyProfile(s), false).join('/')}§7 blocks${s.fancy.hide.enabled ? `, hide §f${s.fancy.hide.distance}` : ''}` : '§ffull quality'}`]
+      : []),
     ...(s.debug ? ['§c§lDEBUG§r§c: colours show LOD levels (1 blue, 2 red, 3 green, 4 yellow)'] : []),
   ].join('\n');
   return {
@@ -162,10 +164,24 @@ function sharedName(shared, key, base) {
 async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
   const att = structuredClone(a.attachable);
   const d = att['minecraft:attachable'].description;
-  const maxLod = s.lodCount;
-  const hideLod = s.hide.enabled ? maxLod + 1 : null;
-  const physMax = s.physicsOffFrom - 1;
-  const t = thresholds(s);
+  // Profiles: main (everyone / Simple graphics) and, in graphics mode, Fancy.
+  // Array index: 0 = original, 1..Ns = main levels, Ns+1..Ns+Nf = Fancy levels.
+  const graphics = s.gate === 'graphics';
+  const profiles = [{ p: s, offset: 0 }];
+  if (graphics) profiles.push({ p: fancyProfile(s), offset: s.lodCount });
+  const maxLod = profiles.reduce((m, x) => m + x.p.lodCount, 0);
+  const pinfo = profiles.map(({ p }) => ({ n: p.lodCount, thresholds: thresholds(p), hide: p.hide.enabled, physMax: p.physicsOffFrom - 1 }));
+  let lodStmt, physCond, visCond;
+  if (graphics) {
+    lodStmt = lodLineGraphics(pinfo[0], pinfo[1]);
+    physCond = pinfo.some((x) => x.physMax < x.thresholds.length) ? 'v.sl_phys > 0' : null;
+    visCond = pinfo.some((x) => x.hide) ? 'v.sl_vis > 0' : null;
+  } else {
+    const [m] = pinfo;
+    lodStmt = lodLine(m.thresholds);
+    physCond = m.physMax >= m.thresholds.length ? null : `v.sl_lod <= ${m.physMax}`;
+    visCond = m.hide ? `v.sl_lod < ${m.n + 1}` : null;
+  }
   const id = safeId(a.identifier);
   const info = { key: a.key, identifier: a.identifier, textures: [], cubes: [a.cubeCount], warnings: [...a.warnings] };
 
@@ -178,19 +194,20 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
 
   // scripts
   d.scripts = d.scripts || {};
-  d.scripts.pre_animation = transformPreAnimation(d.scripts.pre_animation || [], t, physMax, gateExpr(s.gate));
-  if (d.scripts.animate) d.scripts.animate = transformAnimate(d.scripts.animate, physMax, t.length);
+  d.scripts.pre_animation = transformPreAnimation(d.scripts.pre_animation || [], lodStmt, physCond);
+  if (d.scripts.animate) d.scripts.animate = transformAnimate(d.scripts.animate, physCond);
 
   // geometry LODs
   d.geometry = { ...(d.geometry || {}) };
   const baseGeo = d.geometry[a.geoKey];
   if (a.geoKey !== 'default' && baseGeo) d.geometry.default = baseGeo;
+  const geoBase = safeId(String(baseGeo || id).replace(/^geometry\./, ''));
+  for (const { p, offset } of profiles) {
   let prevId = d.geometry.default;
   let prevDef = a.geometry?.def;
-  const geoBase = safeId(String(baseGeo || id).replace(/^geometry\./, ''));
   let chain = '';
-  for (let i = 1; i <= maxLod; i++) {
-    const lv = s.levels[i];
+  for (let i = 1; i <= p.lodCount; i++) {
+    const lv = p.levels[i];
     if (prevDef && (lv.minCubeSize > 0 || lv.dedupePlanes)) {
       const red = reduceGeometryDef(prevDef, lv);
       if (countCubes(red) < countCubes(prevDef)) {
@@ -201,21 +218,23 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
         prevDef = red;
       }
     }
-    d.geometry[`lod${i}`] = prevId;
+    d.geometry[`lod${offset + i}`] = prevId;
     info.cubes.push(prevDef ? countCubes(prevDef) : 0);
+  }
   }
 
   // texture LODs
   d.textures = { ...(d.textures || {}) };
   const baseTex = d.textures[a.texKey];
   if (a.texKey !== 'default' && baseTex) d.textures.default = baseTex;
-  const levels = textureLevels(s);
   const canTex = a.texture && a.texture.ext.toLowerCase() === '.png';
   let img = null;
   const alphaMode = /blend|translucent/i.test(a.material) ? 'blend' : 'test';
   const texName = (a.texRef || id).split('/').pop();
   const texKey = `${a.slug}|${a.pack?.root}|${a.texture?.path}`;
-  for (let i = 1; i <= maxLod; i++) {
+  for (const { p, offset } of profiles) {
+  const levels = textureLevels(p);
+  for (let i = 1; i <= p.lodCount; i++) {
     const r = levels[i - 1];
     let ref = baseTex;
     if (r && canTex) {
@@ -232,7 +251,8 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
       const w = Math.max(1, Math.round((a.texW || 0) * r)), h = Math.max(1, Math.round((a.texH || 0) * r));
       info.textures.push(a.texW ? `${w}x${h}${fresh ? '' : ' (shared)'}` : 'generated');
     } else info.textures.push('original');
-    d.textures[`lod${i}`] = ref;
+    d.textures[`lod${offset + i}`] = ref;
+  }
   }
 
   // Self-contained: copy the original geometry, texture and animation files at their original paths.
@@ -266,7 +286,7 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
   if (firstName && !base && firstName !== 'controller.render.armor' && firstName !== 'controller.render.default') {
     info.warnings.push(`render controller ${firstName} not in pack; generated a default one`);
   }
-  const rc = buildRenderController(base, { maxLod, hideLod, hasEnchanted: !!d.textures.enchanted });
+  const rc = buildRenderController(base, { maxLod, visCond, hasEnchanted: !!d.textures.enchanted });
   if (!rcBySlug.has(a.slug)) rcBySlug.set(a.slug, {});
   rcBySlug.get(a.slug)[rcName] = rc;
   const newEntry = typeof first === 'object' && first ? { [rcName]: Object.values(first)[0] } : rcName;

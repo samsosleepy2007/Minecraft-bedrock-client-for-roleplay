@@ -210,27 +210,41 @@ const stepHead = (n, title, extra = '') =>
   `<div class="head"><div class="title"><span class="num">${n}</span><h2>${title}</h2></div>${extra}</div>`;
 
 /** Advanced settings form; `path` = 'g' for global or armor key for overrides. */
+/**
+ * Advanced per-level form; `path` = 'g' for global or the armor-set id for overrides.
+ * In graphics mode it shows two profiles: Simple (main settings) and Fancy (`fancy.*`, 0 levels allowed).
+ */
 function settingsForm(s, path) {
+  if (s.gate !== 'graphics') return profileForm(s, path, '', 1, t('lodCount'));
+  return profileForm(s, path, '', 1, t('lodCountSimple')) + profileForm({ ...s.fancy, gate: 'all' }, path, 'fancy.', 0, t('lodCountFancy'));
+}
+
+function profileForm(s, path, prefix, minCount, title) {
+  const f = (name) => prefix + name;
   const lv = s.levels;
-  let rows = `<div class="lv"><b>${t('lod0')}</b><label class="fld">${t('until')} <input type="number" min="1" step="1" data-f="levels.0.distance" value="${lv[0].distance}"></label></div>`;
+  let rows = '';
+  if (s.lodCount > 0) {
+    rows += `<div class="lv"><b>${t('lod0')}</b><label class="fld">${t('until')} <input type="number" min="1" step="1" data-f="${f('levels.0.distance')}" value="${lv[0].distance}"></label></div>`;
+  }
   for (let i = 1; i <= s.lodCount; i++) {
     const last = i === s.lodCount;
     rows += `<div class="lv"><b><i class="dot d${i}"></i>${t('level')} ${i}</b>
-      ${last ? '' : `<label class="fld">${t('until')} <input type="number" min="1" step="1" data-f="levels.${i}.distance" value="${lv[i].distance}"></label>`}
-      <label class="fld">${t('res')} <select data-f="levels.${i}.resolution">${RESOLUTIONS.map((r) => opt(r, r * 100 + '%', lv[i].resolution)).join('')}</select></label>
-      <label class="fld">${t('minCube')} <input type="number" min="0" step="0.5" data-f="levels.${i}.minCubeSize" value="${lv[i].minCubeSize}"></label>
-      <label class="tgl">${t('dedupe')}<input type="checkbox" class="ck" data-f="levels.${i}.dedupePlanes" ${lv[i].dedupePlanes ? 'checked' : ''}></label></div>`;
+      ${last ? '' : `<label class="fld">${t('until')} <input type="number" min="1" step="1" data-f="${f(`levels.${i}.distance`)}" value="${lv[i].distance}"></label>`}
+      <label class="fld">${t('res')} <select data-f="${f(`levels.${i}.resolution`)}">${RESOLUTIONS.map((r) => opt(r, r * 100 + '%', lv[i].resolution)).join('')}</select></label>
+      <label class="fld">${t('minCube')} <input type="number" min="0" step="0.5" data-f="${f(`levels.${i}.minCubeSize`)}" value="${lv[i].minCubeSize}"></label>
+      <label class="tgl">${t('dedupe')}<input type="checkbox" class="ck" data-f="${f(`levels.${i}.dedupePlanes`)}" ${lv[i].dedupePlanes ? 'checked' : ''}></label></div>`;
   }
   const phys = [];
   for (let i = 0; i <= s.lodCount; i++) phys.push(opt(i, `${t('level')} ${i}`, s.physicsOffFrom));
   phys.push(opt(s.lodCount + 1, t('never'), s.physicsOffFrom));
-  const errs = validateSettings(s);
-  return `<div class="form" data-path="${esc(path)}">
-    <label class="fld">${t('lodCount')} <select data-f="lodCount">${[1, 2, 3, 4].slice(0, MAX_LODS).map((n) => opt(n, n, s.lodCount)).join('')}</select></label>
+  const counts = [0, 1, 2, 3, 4].filter((n) => n >= minCount && n <= MAX_LODS);
+  const errs = s.lodCount > 0 || s.hide.enabled ? validateSettings(normalizeSettings({ ...s, lodCount: Math.max(1, s.lodCount) })) : [];
+  return `<div class="form ${prefix ? 'fancy' : ''}" data-path="${esc(path)}">
+    <label class="fld"><b>${title}</b> <select data-f="${f('lodCount')}">${counts.map((n) => opt(n, n === 0 ? t('lodZero') : n, s.lodCount)).join('')}</select></label>
     ${rows}
-    <label class="fld">${t('physOff')} <select data-f="physicsOffFrom">${phys.join('')}</select></label>
-    <label class="tgl">${t('hide')}<input type="checkbox" class="ck" data-f="hide.enabled" ${s.hide.enabled ? 'checked' : ''}></label>
-    ${s.hide.enabled ? `<label class="fld">${t('until')} <input type="number" min="1" data-f="hide.distance" value="${s.hide.distance}"></label>` : ''}
+    ${s.lodCount > 0 ? `<label class="fld">${t('physOff')} <select data-f="${f('physicsOffFrom')}">${phys.join('')}</select></label>` : ''}
+    <label class="tgl">${t('hide')}<input type="checkbox" class="ck" data-f="${f('hide.enabled')}" ${s.hide.enabled ? 'checked' : ''}></label>
+    ${s.hide.enabled ? `<label class="fld">${t('until')} <input type="number" min="1" data-f="${f('hide.distance')}" value="${s.hide.distance}"></label>` : ''}
     ${errs.length ? `<p class="err">${t('errOrder')}</p>` : ''}
   </div>`;
 }
@@ -454,7 +468,7 @@ app.addEventListener('change', (e) => {
     const n = normalizeSettings(target);
     if (path === 'g') {
       state.settings = n;
-      if (!['memoryMode', 'armorStand', 'debug', 'gate'].includes(el.dataset.f)) state.preset = null;
+      if (!['memoryMode', 'armorStand', 'debug', 'gate'].includes(el.dataset.f) && !el.dataset.f.startsWith('fancy.')) state.preset = null;
     }
     else state.overrides[path] = n;
   } else return;
@@ -501,7 +515,7 @@ app.addEventListener('click', (e) => {
     store.set('lang', state.lang);
     document.documentElement.lang = state.lang;
   } else if (el.dataset.preset) {
-    const keep = { debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate };
+    const keep = { debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, fancy: state.settings.fancy };
     state.settings = normalizeSettings({ ...structuredClone(PRESETS[el.dataset.preset]), ...keep });
     state.preset = el.dataset.preset;
     state.sliders = { ...PRESET_SLIDERS[state.preset] };
@@ -517,7 +531,7 @@ app.addEventListener('click', (e) => {
 
 // a chosen preset always uses its current definition (old saved values may be outdated)
 if (PRESETS[state.preset]) {
-  state.settings = normalizeSettings({ ...structuredClone(PRESETS[state.preset]), debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate });
+  state.settings = normalizeSettings({ ...structuredClone(PRESETS[state.preset]), debug: state.settings.debug, armorStand: state.settings.armorStand, gate: state.settings.gate, fancy: state.settings.fancy });
 }
 document.documentElement.lang = state.lang;
 render();

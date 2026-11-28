@@ -255,6 +255,30 @@ describe('scan + build (fixture)', () => {
     expect(m.header.name.replace(/§./g, '')).toBe('SleepyArmor Lite - 1 Armor');
   });
 
+  it('graphics mode: separate Simple / Fancy profiles (Fancy 0 = always full)', async () => {
+    const a = await scanAddon('S.mcaddon', await makeSampleAddon());
+    const res = await buildPack(a.armors, { settings: settings({ gate: 'graphics', fancy: { lodCount: 1, levels: [{ distance: 16 }, { distance: 48, resolution: 0.5 }], hide: { enabled: false } } }) });
+    const z = await JSZip.loadAsync(res.bytes);
+    const att = JSON.parse(await z.file('attachables/sleepy_hair_helmet.json').async('string'))['minecraft:attachable'].description;
+    const pre = att.scripts.pre_animation;
+    expect(pre[1]).toContain("v.sl_g = q.graphics_mode_is_any('simple');");
+    expect(pre[1]).toContain('v.sl_lod = v.sl_g * math.min(v.sl_ls, 3) + (1 - v.sl_g) * (math.min(v.sl_lf, 1) + 3 * (v.sl_lf > 0));');
+    expect(pre[1]).toContain('v.sl_vis = v.sl_g * (v.sl_ls < 4) + (1 - v.sl_g) * 1;');
+    expect(pre[1]).not.toMatch(/\? \(v\.sl_d/); // no ternary nested in a true-branch
+    expect(pre[2]).toMatch(/^v\.sl_phys > 0 \? \{/);
+    expect(Object.keys(att.textures)).toEqual(['default', 'enchanted', 'lod1', 'lod2', 'lod3', 'lod4']);
+    expect(pngSize(await z.file(att.textures.lod4 + '.png').async('uint8array'))).toEqual({ width: 256, height: 256 });
+    const rc = JSON.parse(await z.file('render_controllers/sl_lod/s.render_controllers.json').async('string')).render_controllers['controller.render.sleepy_hair_helmet_lod'];
+    expect(rc.geometry).toBe('Array.geo[math.min(v.sl_lod, 4)]');
+    expect(rc.part_visibility[0]).toEqual({ '*': 'v.sl_vis > 0' });
+    pre.forEach((l) => expect(bracesBalanced(l)).toBe(true));
+    // Fancy with 0 levels: index stays 0
+    const res0 = await buildPack(a.armors, { settings: settings({ gate: 'graphics' }) });
+    const att0 = JSON.parse(await (await JSZip.loadAsync(res0.bytes)).file('attachables/sleepy_hair_helmet.json').async('string'))['minecraft:attachable'].description;
+    expect(att0.scripts.pre_animation[1]).toContain('v.sl_lf = 0;');
+    expect(Object.keys(att0.textures)).toEqual(['default', 'enchanted', 'lod1', 'lod2', 'lod3']);
+  });
+
   it('pack state: keeps UUID and bumps version on rebuild; debug name', async () => {
     const a = await scanAddon('S.mcaddon', await makeSampleAddon());
     const r1 = await buildPack(a.armors, { settings: settings() });
