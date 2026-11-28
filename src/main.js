@@ -534,3 +534,34 @@ if (PRESETS[state.preset]) {
 }
 document.documentElement.lang = state.lang;
 render();
+
+// ---------- first-visit notice: read the install guide (at most once a week) ----------
+const WEEK = 7 * 24 * 60 * 60 * 1000;
+function showNotice() {
+  const last = Number(store.get('noticeAt', 0)) || 0;
+  if (Date.now() - last < WEEK) return;
+  const box = document.createElement('div');
+  box.className = 'modal-wrap';
+  box.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="ntitle">
+    <h2 id="ntitle">${t('noticeTitle')}</h2>
+    <p>${t('noticeBody')}</p>
+    <div class="btns"><button type="button" class="btn primary" data-n="read">${t('noticeRead')}</button>
+    <button type="button" class="btn" data-n="ok">${t('noticeOk')}</button></div></div>`;
+  const close = (read) => {
+    store.set('noticeAt', Date.now());
+    box.classList.add('out');
+    setTimeout(() => box.remove(), 250);
+    if (read) {
+      state.howOpen = true;
+      render();
+      $('#how')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-n]');
+    if (b) close(b.dataset.n === 'read');
+  });
+  document.body.append(box);
+  box.querySelector('[data-n=read]').focus();
+}
+showNotice();

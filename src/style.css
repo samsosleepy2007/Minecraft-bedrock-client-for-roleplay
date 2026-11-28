@@ -149,3 +149,12 @@ code { font-size: 12px; }
 .opt b { font-size: 14px; font-weight: 600; }
 .opt small { font-size: 12px; color: var(--muted); }
 .form.fancy { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 6px; }
+
+/* first-visit notice */
+.modal-wrap { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(9, 9, 11, .72); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: fadein .25s ease; }
+.modal-wrap.out { opacity: 0; transition: opacity .25s ease; }
+.modal { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 22px 20px 16px; animation: pop .45s var(--spring); }
+.modal h2 { font-size: 18px; margin: 0 0 8px; }
+.modal p { margin: 0 0 14px; color: var(--fg3); font-size: 14px; line-height: 1.6; }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+@keyframes fadein { from { opacity: 0 } to { opacity: 1 } }
