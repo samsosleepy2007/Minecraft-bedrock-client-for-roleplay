@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: GPL-3.0-only — free software, see LICENSE. */
 import JSZip from 'jszip';
 import { parseBedrockJson } from './json.js';
-import { listGeometries, countCubes } from './geometry.js';
+import { listGeometries, countCubes, countPolys } from './geometry.js';
 import { pngSize } from './texture.js';
 import { countMolang } from './molang.js';
 
@@ -159,6 +159,8 @@ function describeArmor(att, rel, pack, warnings) {
     geometry: geo,
     material,
     cubeCount: geo ? countCubes(geo.def) : 0,
+    polyCount: geo ? countPolys(geo.def) : 0,
+    setKey: geo || tex ? `${geo?.id}|${tex?.path}` : d.identifier,
     molangLines: countMolang(d.scripts?.pre_animation),
     renderControllers: rcs,
     controllerDefs: Object.fromEntries(rcs.filter((n) => pack.controllers.has(n)).map((n) => [n, pack.controllers.get(n)])),
@@ -198,6 +200,9 @@ export const summarize = (a) => ({
   texW: a.texW,
   texH: a.texH,
   cubeCount: a.cubeCount,
+  polyCount: a.polyCount,
+  setKey: `${a.slug}|${a.setKey}`,
+  geoId: a.geometry?.id || '',
   molangLines: a.molangLines,
   likelyArmor: a.likelyArmor,
   warnings: a.warnings,

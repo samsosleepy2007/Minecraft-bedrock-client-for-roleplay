@@ -96,6 +96,34 @@ function cubeMesh(cube, mat, tw, th) {
   return mesh;
 }
 
+/** poly_mesh → three mesh (positions are model-space, X mirrored like cubes). */
+function polyMesh(pm, mat, tw, th) {
+  const P = pm.positions || [], N = pm.normals || [], U = pm.uvs || [];
+  let polys = pm.polys;
+  if (!Array.isArray(polys)) return null;
+  const pos = [], uv = [];
+  const vert = (v) => {
+    const p = P[v[0]] || [0, 0, 0];
+    pos.push(-p[0], p[1], p[2]);
+    const t = U[v[2]] || [0, 0];
+    if (pm.normalized_uvs) uv.push(t[0], t[1]);
+    else uv.push(t[0] / tw, 1 - t[1] / th);
+  };
+  for (const poly of polys) {
+    if (!Array.isArray(poly) || poly.length < 3) continue;
+    // quads may repeat the last vertex as a triangle; fan-triangulate
+    for (let k = 1; k + 1 < poly.length; k++) {
+      vert(poly[0]);
+      vert(poly[k]);
+      vert(poly[k + 1]);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return new THREE.Mesh(g, mat);
+}
+
 function buildModel(def, mat) {
   const desc = def.description || {};
   const tw = Number(desc.texture_width ?? def.texturewidth) || 64;
@@ -115,6 +143,13 @@ function buildModel(def, mat) {
     const pp = parent ? parent.userData.pivot : [0, 0, 0];
     g.position.set(-(p[0] - pp[0]), p[1] - pp[1], p[2] - pp[2]);
     applyRotation(g, b.rotation);
+    if (b.poly_mesh) {
+      const m = polyMesh(b.poly_mesh, mat, tw, th);
+      if (m) {
+        m.position.set(p[0], -p[1], -p[2]);
+        g.add(m);
+      }
+    }
     for (const c of b.cubes || []) {
       const m = cubeMesh(c, mat, tw, th);
       m.position.sub(new THREE.Vector3(-p[0], p[1], p[2]));

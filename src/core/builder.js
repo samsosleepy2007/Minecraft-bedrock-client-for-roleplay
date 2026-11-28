@@ -89,12 +89,14 @@ export async function buildPack(armors, options) {
   const zip = new JSZip();
   const usedPaths = new Set();
   const rcBySlug = new Map();
+  // pieces of a set (head/chest/legs/feet) often share one texture + geometry: generate their LOD files once
+  const shared = { files: new Map(), names: new Set(), images: new Map() };
   const report = [];
   let done = 0;
   for (const a of armors) {
     prog(done / armors.length, a.identifier);
     const s = settingsFor(global, options.overrides?.[a.key]);
-    report.push(await buildArmor(zip, a, s, usedPaths, rcBySlug));
+    report.push(await buildArmor(zip, a, s, usedPaths, rcBySlug, shared));
     done++;
   }
   for (const [slug, rcs] of rcBySlug) {
@@ -106,7 +108,7 @@ export async function buildPack(armors, options) {
     moduleUuid: prev.moduleUuid || uuid(),
     version: (Number(prev.version) || 0) + 1,
   };
-  zip.file('manifest.json', toJson(makeManifest(global, packState, armors.length)));
+  zip.file('manifest.json', toJson(makeManifest(global, packState, countSets(armors))));
   zip.file('LICENSE.txt', LICENSE_TEXT);
   zip.file('pack_icon.png', packIconBytes());
   prog(0.98, 'zip');
@@ -114,6 +116,11 @@ export async function buildPack(armors, options) {
   prog(1, 'done');
   const files = Object.keys(zip.files).filter((p) => !zip.files[p].dir);
   return { bytes, fileName: global.debug ? 'SleepyArmorLite_DEBUG.mcpack' : 'SleepyArmorLite.mcpack', packState, report, files };
+}
+
+/** Number of armor sets: pieces sharing one geometry + texture count once. */
+export function countSets(armors) {
+  return new Set(armors.map((a) => (a.geometry || a.texture ? `${a.slug}|${a.geometry?.id}|${a.texture?.path}` : a.key))).size;
 }
 
 export function makeManifest(s, packState, count) {
@@ -141,7 +148,17 @@ export function makeManifest(s, packState, count) {
   };
 }
 
-async function buildArmor(zip, a, s, usedPaths, rcBySlug) {
+/** Unique file/identifier name for a cache key (adds _2, _3 … when the base name is taken by another key). */
+function sharedName(shared, key, base) {
+  if (shared.files.has(key)) return { name: shared.files.get(key), fresh: false };
+  let name = base;
+  for (let n = 2; shared.names.has(name); n++) name = `${base}_${n}`;
+  shared.names.add(name);
+  shared.files.set(key, name);
+  return { name, fresh: true };
+}
+
+async function buildArmor(zip, a, s, usedPaths, rcBySlug, shared) {
   const att = structuredClone(a.attachable);
   const d = att['minecraft:attachable'].description;
   const maxLod = s.lodCount;
@@ -169,13 +186,17 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug) {
   if (a.geoKey !== 'default' && baseGeo) d.geometry.default = baseGeo;
   let prevId = d.geometry.default;
   let prevDef = a.geometry?.def;
+  const geoBase = safeId(String(baseGeo || id).replace(/^geometry\./, ''));
+  let chain = '';
   for (let i = 1; i <= maxLod; i++) {
     const lv = s.levels[i];
     if (prevDef && (lv.minCubeSize > 0 || lv.dedupePlanes)) {
       const red = reduceGeometryDef(prevDef, lv);
       if (countCubes(red) < countCubes(prevDef)) {
-        prevId = `geometry.sl_${a.slug}_${id}_lod${i}`;
-        zip.file(`models/entity/sl_lod/${a.slug}/${id}_lod${i}.geo.json`, toJson(makeGeometryFile(prevId, red, a.geometry.format, a.geometry.key)));
+        chain += `|${lv.minCubeSize},${lv.dedupePlanes}`;
+        const { name, fresh } = sharedName(shared, `geo|${a.slug}|${a.pack?.root}|${baseGeo}${chain}`, `geometry.sl_${a.slug}_${geoBase}_lod${i}`);
+        if (fresh) zip.file(`models/entity/sl_lod/${a.slug}/${name.replace(/^geometry\.sl_/, '')}.geo.json`, toJson(makeGeometryFile(name, red, a.geometry.format, a.geometry.key)));
+        prevId = name;
         prevDef = red;
       }
     }
@@ -192,16 +213,23 @@ async function buildArmor(zip, a, s, usedPaths, rcBySlug) {
   let img = null;
   const alphaMode = /blend|translucent/i.test(a.material) ? 'blend' : 'test';
   const texName = (a.texRef || id).split('/').pop();
+  const texKey = `${a.slug}|${a.pack?.root}|${a.texture?.path}`;
   for (let i = 1; i <= maxLod; i++) {
     const r = levels[i - 1];
     let ref = baseTex;
     if (r && canTex) {
-      img = img || decodePng(await a.texture.file.async('uint8array'));
-      let out = r === 1 ? img : downscale(img, r, { alphaMode });
-      if (s.debug) out = tint(out, DEBUG_COLORS[i] || DEBUG_COLORS[DEBUG_COLORS.length - 1]);
-      ref = `textures/sl_lod/${a.slug}/${texName}_lod${i}`;
-      zip.file(`${ref}.png`, encodePng(out));
-      info.textures.push(`${out.width}x${out.height}`);
+      const tag = `${r * 1000}${s.debug ? `_d${i}` : ''}`;
+      const { name, fresh } = sharedName(shared, `tex|${texKey}|${tag}|${alphaMode}`, `textures/sl_lod/${a.slug}/${texName}_lod${i}`);
+      ref = name;
+      if (fresh) {
+        img = img || shared.images.get(texKey) || decodePng(await a.texture.file.async('uint8array'));
+        shared.images.set(texKey, img);
+        let out = r === 1 ? img : downscale(img, r, { alphaMode });
+        if (s.debug) out = tint(out, DEBUG_COLORS[i] || DEBUG_COLORS[DEBUG_COLORS.length - 1]);
+        zip.file(`${ref}.png`, encodePng(out));
+      }
+      const w = Math.max(1, Math.round((a.texW || 0) * r)), h = Math.max(1, Math.round((a.texH || 0) * r));
+      info.textures.push(a.texW ? `${w}x${h}${fresh ? '' : ' (shared)'}` : 'generated');
     } else info.textures.push('original');
     d.textures[`lod${i}`] = ref;
   }

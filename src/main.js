@@ -99,7 +99,7 @@ function build() {
   if (!keys.length) return alert(t('needSel'));
   if (validateSettings(state.settings).length) return alert(t('errOrder'));
   const overrides = {};
-  for (const k of keys) if (state.overrides[k]) overrides[k] = state.overrides[k];
+  for (const k of keys) if (state.overrides[setOf(k)]) overrides[k] = state.overrides[setOf(k)];
   state.busy = true;
   state.result = null;
   render();
@@ -138,17 +138,37 @@ function save() {
   store.set('overrides', state.overrides);
 }
 
+// ---------- armor sets: pieces (head/chest/legs/feet) sharing geometry + texture ----------
+const setOf = (key) => state.armors.find((a) => a.key === key)?.setKey || key;
+function armorGroups(list) {
+  const m = new Map();
+  for (const a of list) {
+    const g = m.get(a.setKey) || { id: a.setKey, members: [] };
+    g.members.push(a);
+    m.set(a.setKey, g);
+  }
+  return [...m.values()];
+}
+/** "ryo_body1:ryo_body1_head" ×4 → ["head","chest","legs","feet"] (common prefix removed) */
+function pieceNames(ids) {
+  if (ids.length < 2) return ids;
+  let pre = ids[0];
+  for (const id of ids) while (!id.startsWith(pre)) pre = pre.slice(0, -1);
+  return ids.map((id) => id.slice(pre.length).replace(/^[_:.-]+/, '') || id);
+}
+
 // ---------- level preview (real texture, downscaled in the worker) ----------
 const effSettings = (key) => settingsFor(state.settings, state.overrides[key]);
 const previewSig = (key) => JSON.stringify(effSettings(key));
-function requestPreview(key) {
-  const sig = previewSig(key);
-  const p = state.previews[key];
+function requestPreview(gid, memberKey) {
+  const sig = previewSig(gid);
+  const p = state.previews[gid];
   if (p && (p.sig === sig || p.pending === sig)) return;
-  state.previews[key] = { ...(p || {}), pending: sig };
-  worker.postMessage({ type: 'preview', key, id: sig, settings: state.settings, override: state.overrides[key] });
+  state.previews[gid] = { ...(p || {}), pending: sig };
+  worker.postMessage({ type: 'preview', key: memberKey, gid, id: sig, settings: state.settings, override: state.overrides[gid] });
 }
 async function onPreview(m) {
+  m.key = m.gid;
   const old = state.previews[m.key];
   if (old?.pending !== m.id) return;
   // three.js is loaded only when a preview is first needed (keeps first load small on phones)
@@ -223,14 +243,15 @@ function setField(obj, f, val) {
 }
 
 /** Preview tiles: one per LOD level (+ a hidden tile when hiding is on). */
-function previewStrip(a) {
-  const s = effSettings(a.key);
-  const p = state.previews[a.key];
+function previewStrip(g) {
+  const a = g.members[0];
+  const s = effSettings(g.id);
+  const p = state.previews[g.id];
   if (!p?.levels) {
-    requestPreview(a.key);
+    requestPreview(g.id, a.key);
     return `<div class="prev"><p class="muted center">${a.texW ? '…' : t('noPreview')}</p></div>`;
   }
-  if (p.sig !== previewSig(a.key)) requestPreview(a.key);
+  if (p.sig !== previewSig(g.id)) requestPreview(g.id, a.key);
   if (!p.levels.length) return `<div class="prev"><p class="muted center">${t('noPreview')}</p></div>`;
   const ends = [...s.levels.slice(0, s.lodCount).map((l) => l.distance), s.hide.enabled ? s.hide.distance : '∞'];
   const tiles = p.levels.map((l, i) => {
@@ -299,7 +320,7 @@ function simpleControls(s) {
 function render() {
   const s = state.settings;
   const sel = state.armors.filter((a) => state.selected.has(a.key) && isChosen(a));
-  const mb = sel.reduce((sum, a) => sum + estimateExtraMB([a], settingsFor(s, state.overrides[a.key])), 0);
+  const mb = armorGroups(sel).reduce((sum, g) => sum + estimateExtraMB([g.members[0]], settingsFor(s, state.overrides[g.id])), 0);
   const visible = state.armors.filter((a) => state.showAll || a.likelyArmor);
   const dupIds = new Set(state.duplicates.map((d) => d.identifier));
   const pi = PRESET_KEYS.indexOf(state.preset);
@@ -330,21 +351,28 @@ function render() {
       const a = state.armors.find((x) => x.key === k);
       return `<label class="tgl left"><input type="radio" class="ck round" name="dup-${esc(d.identifier)}" data-dup="${esc(d.identifier)}" value="${esc(k)}" ${state.dupChoice[d.identifier] === k ? 'checked' : ''}><span>${esc(a?.addonName || k)}</span></label>`;
     }).join('')}</div>`).join('')}
-    ${visible.map((a) => {
-      const ov = state.overrides[a.key];
-      const off = !isChosen(a);
-      const open = !!state.open[a.key];
+    ${armorGroups(visible).map((g) => {
+      const a = g.members[0];
+      const ov = state.overrides[g.id];
+      const chosen = g.members.filter(isChosen);
+      const off = !chosen.length;
+      const on = !off && chosen.every((m) => state.selected.has(m.key));
+      const open = !!state.open[g.id];
+      const multi = g.members.length > 1;
+      const title = multi ? `${(a.geoId || a.identifier).replace(/^geometry\./, '')} · ${g.members.length} ${t('pieces')}` : a.identifier;
+      const stats = `${a.texW ? a.texW + '×' + a.texH : '?'} · ${a.cubeCount} ${t('cubes')}${a.polyCount ? ` · ${a.polyCount} mesh` : ''} · ${t('molang')} ${a.molangLines}`;
       return `<div class="armor ${off ? 'off' : ''}">
         <div class="arow">
-          <label class="amain"><input type="checkbox" class="ck" data-sel="${esc(a.key)}" ${state.selected.has(a.key) && !off ? 'checked' : ''} ${off ? 'disabled' : ''}>
-            <span class="ainfo"><span class="aname">${esc(a.identifier)}${dupIds.has(a.identifier) ? ' ⚠' : ''}</span>
-            <span class="asub">${esc(a.addonName)} · ${a.texW ? a.texW + '×' + a.texH : '?'} · ${a.cubeCount} ${t('cubes')} · ${t('molang')} ${a.molangLines}</span></span></label>
-          <button type="button" class="icon ${open ? 'rot' : ''}" data-open="${esc(a.key)}" aria-label="${t('previewAria')}" aria-expanded="${open}">${ICON.chev}</button>
+          <label class="amain"><input type="checkbox" class="ck" data-sel="${esc(g.id)}" ${on ? 'checked' : ''} ${off ? 'disabled' : ''}>
+            <span class="ainfo"><span class="aname">${esc(title)}${g.members.some((m) => dupIds.has(m.identifier)) ? ' ⚠' : ''}</span>
+            ${multi ? `<span class="pieces">${pieceNames(g.members.map((m) => m.identifier)).map((n) => `<i>${esc(n)}</i>`).join('')}</span>` : ''}
+            <span class="asub">${esc(a.addonName)} · ${stats}</span></span></label>
+          <button type="button" class="icon ${open ? 'rot' : ''}" data-open="${esc(g.id)}" aria-label="${t('previewAria')}" aria-expanded="${open}">${ICON.chev}</button>
         </div>
-        ${open ? `${previewStrip(a)}
+        ${open ? `${previewStrip(g)}
           ${a.warnings.length ? `<p class="warn sm pad">${a.warnings.map(esc).join('; ')}</p>` : ''}
-          <div class="pad"><label class="tgl">${t('custom')}<input type="checkbox" class="ck" data-ov="${esc(a.key)}" ${ov ? 'checked' : ''}></label>
-          ${ov ? settingsForm(normalizeSettings({ ...s, ...ov }), a.key) : ''}</div>` : ''}
+          <div class="pad"><label class="tgl">${t('custom')}<input type="checkbox" class="ck" data-ov="${esc(g.id)}" ${ov ? 'checked' : ''}></label>
+          ${ov ? settingsForm(normalizeSettings({ ...s, ...ov }), g.id) : ''}</div>` : ''}
       </div>`;
     }).join('')}
     <label class="tgl sm muted">${t('showAll')}<input type="checkbox" class="ck" id="showall" ${state.showAll ? 'checked' : ''}></label>`}
@@ -397,7 +425,9 @@ app.addEventListener('change', (e) => {
   const el = e.target;
   if (el.id === 'files') return onFiles([...el.files]);
   if (el.id === 'showall') state.showAll = el.checked;
-  else if (el.dataset.sel) el.checked ? state.selected.add(el.dataset.sel) : state.selected.delete(el.dataset.sel);
+  else if (el.dataset.sel) {
+    for (const a of state.armors) if (a.setKey === el.dataset.sel && isChosen(a)) el.checked ? state.selected.add(a.key) : state.selected.delete(a.key);
+  }
   else if (el.dataset.dup) state.dupChoice[el.dataset.dup] = el.value;
   else if (el.dataset.slider) {
     state.sliders[el.dataset.slider] = Number(el.value);

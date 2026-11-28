@@ -28,6 +28,16 @@ export function countCubes(def) {
   return n;
 }
 
+/** Number of poly_mesh polygons in a geometry definition. */
+export function countPolys(def) {
+  let n = 0;
+  for (const b of def?.bones || []) {
+    const p = b.poly_mesh?.polys;
+    if (Array.isArray(p)) n += p.length;
+  }
+  return n;
+}
+
 const planeAxis = (size) => (Array.isArray(size) ? size.findIndex((s) => Number(s) === 0) : -1);
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 

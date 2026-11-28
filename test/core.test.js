@@ -199,7 +199,7 @@ describe('scan + build (fixture)', () => {
     expect(att.textures.lod1).toMatch(/^textures\/sl_lod\/sleepy_sample\//);
 
     // geometry cube counts drop
-    const g1 = JSON.parse(await z.file('models/entity/sl_lod/sleepy_sample/sleepy_hair_helmet_lod1.geo.json').async('string'));
+    const g1 = JSON.parse(await z.file('models/entity/sl_lod/sleepy_sample/sleepy_sample_sleepy_hair_lod1.geo.json').async('string'));
     expect(g1['minecraft:geometry'][0].description.identifier).toBe(att.geometry.lod1);
     expect(countCubes(g1['minecraft:geometry'][0])).toBe(3);
     expect(g1['minecraft:geometry'][0].bones).toHaveLength(5);
@@ -219,6 +219,24 @@ describe('scan + build (fixture)', () => {
     expect(chest.item).toEqual({ 'sleepy:plate_chest': "q.owner_identifier == 'minecraft:player' || q.owner_identifier == 'minecraft:armor_stand'" });
     expect(chest.scripts.pre_animation).toHaveLength(1);
     expect(chest.scripts.parent_setup).toBe('v.chest_layer_visible = 0.0;');
+  });
+
+  it('pieces sharing texture + geometry share LOD files; name counts sets', async () => {
+    const a = await scanAddon('S.mcaddon', await makeSampleAddon());
+    const hair = a.armors.find((x) => x.identifier === 'sleepy:hair_helmet');
+    const twin = { ...hair, identifier: 'sleepy:hair_chest', key: 's::sleepy:hair_chest', attachablePath: 'attachables/hair_chest.json' };
+    const res = await buildPack([hair, twin], { settings: settings() });
+    const pngs = res.files.filter((f) => f.startsWith('textures/'));
+    const geos = res.files.filter((f) => f.endsWith('.geo.json'));
+    expect(pngs).toHaveLength(3); // one per LOD level, not per piece
+    expect(geos).toHaveLength(1);
+    const z = await JSZip.loadAsync(res.bytes);
+    const t1 = JSON.parse(await z.file('attachables/sleepy_hair_helmet.json').async('string'))['minecraft:attachable'].description;
+    const t2 = JSON.parse(await z.file('attachables/hair_chest.json').async('string'))['minecraft:attachable'].description;
+    expect(t2.textures).toEqual(t1.textures);
+    expect(t2.geometry).toEqual(t1.geometry);
+    const m = JSON.parse(await z.file('manifest.json').async('string'));
+    expect(m.header.name.replace(/§./g, '')).toBe('SleepyArmor Lite - 1 Armor');
   });
 
   it('pack state: keeps UUID and bumps version on rebuild; debug name', async () => {

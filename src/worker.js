@@ -51,7 +51,7 @@ self.onmessage = async ({ data: msg }) => {
           out.push({ r, png: encodePng(im), geo: def });
         }
       }
-      self.postMessage({ type: 'preview', key: msg.key, id: msg.id, levels: out, blend: /blend|translucent/i.test(a?.material || '') });
+      self.postMessage({ type: 'preview', key: msg.key, gid: msg.gid ?? msg.key, id: msg.id, levels: out, blend: /blend|translucent/i.test(a?.material || '') });
     } else if (msg.type === 'build') {
       const sel = msg.keys.map((k) => armors.get(k)).filter(Boolean);
       const res = await buildPack(sel, {
